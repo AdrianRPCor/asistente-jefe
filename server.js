@@ -338,6 +338,19 @@ textarea::placeholder{color:var(--text3);}
 const SESSION_ID = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2,9);
 let config={claudeKey:'',openaiKey:'',systemPrompt:document.getElementById('systemPrompt').value,voice:'nova',alwaysSpeak:'match'};
 let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false;
+// Safari requiere desbloquear AudioContext con gesto del usuario
+let audioCtx=null;
+function unlockAudio(){
+  if(audioCtx)return;
+  try{
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    // Reproducir silencio para desbloquear
+    const buf=audioCtx.createBuffer(1,1,22050);
+    const src=audioCtx.createBufferSource();
+    src.buffer=buf;src.connect(audioCtx.destination);src.start(0);
+    console.log('🔊 Audio desbloqueado');
+  }catch(e){}
+}
 
 async function init(){
   loadConfig();
@@ -433,8 +446,33 @@ function addAIMessage(text,audioBlob){
   if(audioBlob)autoPlayAudio(audioBlob);
 }
 
-function playAudio(u,btn){if(currentAudio){currentAudio.pause();currentAudio=null;}currentAudio=new Audio(u);btn.textContent='⏸ Reproduciendo...';currentAudio.play();currentAudio.onended=()=>{btn.textContent='▶ Escuchar de nuevo';};}
-function autoPlayAudio(blob){if(currentAudio)currentAudio.pause();currentAudio=new Audio(URL.createObjectURL(blob));currentAudio.play().catch(()=>{});}
+function playAudio(u,btn){if(currentAudio){currentAudio.pause();currentAudio=null;}currentAudio=new Audio(u);currentAudio.playsInline=true;btn.textContent='⏸ Reproduciendo...';currentAudio.play().catch(e=>console.log('play error:',e));currentAudio.onended=()=>{btn.textContent='▶ Escuchar de nuevo';};}
+
+async function autoPlayAudio(blob){
+  if(currentAudio){currentAudio.pause();currentAudio=null;}
+  const url=URL.createObjectURL(blob);
+  // Método 1: AudioContext (funciona en Safari si fue desbloqueado)
+  if(audioCtx){
+    try{
+      const arrayBuf=await blob.arrayBuffer();
+      const audioBuf=await audioCtx.decodeAudioData(arrayBuf);
+      const src=audioCtx.createBufferSource();
+      src.buffer=audioBuf;src.connect(audioCtx.destination);
+      src.start(0);
+      // Guardar referencia para poder parar
+      currentAudio={pause:()=>src.stop(),url};
+      return;
+    }catch(e){console.log('AudioContext fallback:',e);}
+  }
+  // Método 2: Audio element normal
+  const audio=new Audio(url);
+  audio.playsInline=true;
+  currentAudio=audio;
+  audio.play().catch(e=>{
+    console.log('Autoplay bloqueado, mostrando botón');
+    // Si falla, el botón "Escuchar de nuevo" ya está visible
+  });
+}
 
 async function saveMessage(role,content){
   try{await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role,content,session_id:SESSION_ID})});}catch(e){}
@@ -458,6 +496,7 @@ async function toggleRecording(){
   if(isProcessing)return;
   if(isRecording){stopRecording();return;}
   if(!config.openaiKey){showToast('⚠️ Añade tu API Key de OpenAI en ⚙️');openSettings();return;}
+  unlockAudio(); // Desbloquear audio en el gesto del usuario
   try{
     const stream=await navigator.mediaDevices.getUserMedia({audio:true});
     audioChunks=[];
