@@ -4,55 +4,38 @@ const url = require('url');
 const { Pool } = require('pg');
 
 const PORT = process.env.PORT || 3000;
-const DATABASE_URL = process.env.DATABASE_URL;
-
-// ── Base de datos ──────────────────────────────────────────
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS conversations (
-      id SERIAL PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW()
+      id SERIAL PRIMARY KEY, session_id TEXT NOT NULL,
+      role TEXT NOT NULL, content TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS memory (
-      id SERIAL PRIMARY KEY,
-      key TEXT UNIQUE NOT NULL,
-      value TEXT NOT NULL,
-      updated_at TIMESTAMP DEFAULT NOW()
+      id SERIAL PRIMARY KEY, key TEXT UNIQUE NOT NULL,
+      value TEXT NOT NULL, updated_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS profile (
+      id SERIAL PRIMARY KEY, data TEXT NOT NULL, updated_at TIMESTAMP DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS idx_session ON conversations(session_id);
     CREATE INDEX IF NOT EXISTS idx_memory_key ON memory(key);
   `);
-  console.log('✅ Base de datos lista');
+  console.log('✅ DB lista');
 }
 
-// ── Helpers HTTP ───────────────────────────────────────────
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
-      try { resolve(JSON.parse(body)); }
-      catch(e) { resolve({}); }
-    });
+    req.on('data', c => body += c);
+    req.on('end', () => { try { resolve(JSON.parse(body)); } catch(e) { resolve({}); } });
     req.on('error', reject);
   });
 }
 
 function sendJSON(res, status, data) {
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  });
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
   res.end(JSON.stringify(data));
 }
 
@@ -61,138 +44,71 @@ function sendHTML(res, html) {
   res.end(html);
 }
 
-// ── Proxy a Claude API ─────────────────────────────────────
 function callClaude(apiKey, body) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
-    const options = {
-      hostname: 'api.anthropic.com',
-      path: '/v1/messages',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Length': Buffer.byteLength(data)
-      }
-    };
-    const req = https.request(options, res => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(body)); }
-        catch(e) { reject(e); }
-      });
+    const req = https.request({ hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(data) } }, res => {
+      let b = ''; res.on('data', c => b += c); res.on('end', () => { try { resolve(JSON.parse(b)); } catch(e) { reject(e); } });
     });
-    req.on('error', reject);
-    req.write(data);
-    req.end();
+    req.on('error', reject); req.write(data); req.end();
   });
 }
 
-// ── Proxy a OpenAI ─────────────────────────────────────────
 function callOpenAI(path, apiKey, body, isBuffer) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
-    const options = {
-      hostname: 'api.openai.com',
-      path,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Length': Buffer.byteLength(data)
-      }
-    };
-    const req = https.request(options, res => {
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => {
+    const req = https.request({ hostname: 'api.openai.com', path, method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'Content-Length': Buffer.byteLength(data) } }, res => {
+      const chunks = []; res.on('data', c => chunks.push(c)); res.on('end', () => {
         const buf = Buffer.concat(chunks);
         if (isBuffer) resolve({ buffer: buf, contentType: res.headers['content-type'] });
-        else {
-          try { resolve(JSON.parse(buf.toString())); }
-          catch(e) { reject(e); }
-        }
+        else { try { resolve(JSON.parse(buf.toString())); } catch(e) { reject(e); } }
       });
     });
-    req.on('error', reject);
-    req.write(data);
-    req.end();
+    req.on('error', reject); req.write(data); req.end();
   });
 }
 
-// Proxy multipart para Whisper
 function callWhisper(apiKey, audioBuffer, mimeType, filename) {
   return new Promise((resolve, reject) => {
-    const boundary = '----FormBoundary' + Math.random().toString(36).substr(2);
-    const ext = filename.split('.').pop() || 'webm';
-    const parts = [];
-    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`));
-    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nes\r\n`));
-    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.${ext}"\r\nContent-Type: ${mimeType}\r\n\r\n`));
-    parts.push(audioBuffer);
-    parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+    const boundary = '----FB' + Math.random().toString(36).substr(2);
+    const ext = (filename || 'audio.webm').split('.').pop();
+    const parts = [
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nes\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.${ext}"\r\nContent-Type: ${mimeType}\r\n\r\n`),
+      audioBuffer, Buffer.from(`\r\n--${boundary}--\r\n`)
+    ];
     const body = Buffer.concat(parts);
-
-    const options = {
-      hostname: 'api.openai.com',
-      path: '/v1/audio/transcriptions',
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': body.length
-      }
-    };
-    const req = https.request(options, res => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch(e) { reject(e); }
-      });
+    const req = https.request({ hostname: 'api.openai.com', path: '/v1/audio/transcriptions', method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': body.length } }, res => {
+      let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
     });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
+    req.on('error', reject); req.write(body); req.end();
   });
 }
 
-// ── Recibir audio multipart ────────────────────────────────
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', chunk => chunks.push(chunk));
+    req.on('data', c => chunks.push(c));
     req.on('end', () => {
       const buf = Buffer.concat(chunks);
-      const contentType = req.headers['content-type'] || '';
-      const boundaryMatch = contentType.match(/boundary=(.+)$/);
-      if (!boundaryMatch) return reject(new Error('No boundary'));
-      const boundary = Buffer.from('--' + boundaryMatch[1]);
-      const parts = {};
-      let pos = 0;
+      const ct = req.headers['content-type'] || '';
+      const bm = ct.match(/boundary=(.+)$/);
+      if (!bm) return reject(new Error('No boundary'));
+      const boundary = Buffer.from('--' + bm[1]);
+      const parts = {}; let pos = 0;
       while (pos < buf.length) {
-        const boundaryPos = buf.indexOf(boundary, pos);
-        if (boundaryPos === -1) break;
-        pos = boundaryPos + boundary.length + 2;
-        const headerEnd = buf.indexOf(Buffer.from('\r\n\r\n'), pos);
-        if (headerEnd === -1) break;
-        const headers = buf.slice(pos, headerEnd).toString();
-        pos = headerEnd + 4;
-        const nextBoundary = buf.indexOf(boundary, pos);
-        const dataEnd = nextBoundary === -1 ? buf.length : nextBoundary - 2;
-        const nameMatch = headers.match(/name="([^"]+)"/);
-        const filenameMatch = headers.match(/filename="([^"]+)"/);
-        const ctMatch = headers.match(/Content-Type: (.+)/);
-        if (nameMatch) {
-          parts[nameMatch[1]] = {
-            data: buf.slice(pos, dataEnd),
-            filename: filenameMatch ? filenameMatch[1] : null,
-            contentType: ctMatch ? ctMatch[1].trim() : 'text/plain'
-          };
-        }
-        pos = dataEnd + 2;
+        const bp = buf.indexOf(boundary, pos); if (bp === -1) break;
+        pos = bp + boundary.length + 2;
+        const he = buf.indexOf(Buffer.from('\r\n\r\n'), pos); if (he === -1) break;
+        const headers = buf.slice(pos, he).toString(); pos = he + 4;
+        const nb = buf.indexOf(boundary, pos);
+        const de = nb === -1 ? buf.length : nb - 2;
+        const nm = headers.match(/name="([^"]+)"/);
+        const fn = headers.match(/filename="([^"]+)"/);
+        const cm = headers.match(/Content-Type: (.+)/);
+        if (nm) parts[nm[1]] = { data: buf.slice(pos, de), filename: fn ? fn[1] : null, contentType: cm ? cm[1].trim() : 'text/plain' };
+        pos = de + 2;
       }
       resolve(parts);
     });
@@ -200,7 +116,40 @@ function parseMultipart(req) {
   });
 }
 
-// ── HTML de la app ─────────────────────────────────────────
+// ── Actualizar perfil del usuario con IA ──────────────────
+async function updateProfile(apiKey, newMessages, existingProfile) {
+  try {
+    const result = await callClaude(apiKey, {
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      system: 'Eres un sistema de memoria. Dado un perfil existente y mensajes nuevos, actualiza el perfil del usuario en formato JSON compacto. Incluye: nombre, profesión, proyectos, preferencias, contexto importante. Responde SOLO con JSON válido, sin explicaciones.',
+      messages: [{
+        role: 'user',
+        content: `PERFIL ACTUAL: ${existingProfile || '{}'}\n\nMENSAJES NUEVOS:\n${newMessages.map(m => m.role + ': ' + m.content).join('\n')}\n\nActualiza el perfil JSON con la información nueva relevante.`
+      }]
+    });
+    if (result.content?.[0]?.text) {
+      const text = result.content[0].text.trim();
+      JSON.parse(text); // validar que es JSON
+      return text;
+    }
+  } catch(e) { console.log('Profile update error:', e.message); }
+  return existingProfile;
+}
+
+// ── Resumir conversaciones antiguas ──────────────────────
+async function summarizeOldConversations(apiKey, messages) {
+  try {
+    const result = await callClaude(apiKey, {
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 400,
+      system: 'Resume esta conversación en 3-5 puntos clave, en español, de forma muy concisa. Enfócate en decisiones, tareas, información importante.',
+      messages: [{ role: 'user', content: messages.map(m => m.role + ': ' + m.content).join('\n') }]
+    });
+    return result.content?.[0]?.text || '';
+  } catch(e) { return ''; }
+}
+
 const APP_HTML = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -235,7 +184,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);hei
 .msg.user .bubble{background:#1e1b4b;border:1px solid #312e81;border-bottom-right-radius:4px;color:#c4b5fd;}
 .msg.ai .bubble{background:var(--surface);border:1px solid var(--border);border-bottom-left-radius:4px;color:var(--text);}
 .msg-time{font-size:10px;color:var(--text3);margin-top:4px;font-family:'DM Mono',monospace;padding:0 4px;}
-.memory-badge{font-size:10px;color:var(--accent2);padding:0 4px;margin-top:2px;}
 .typing-indicator{display:flex;gap:4px;align-items:center;padding:14px 16px;}
 .typing-indicator span{width:6px;height:6px;background:var(--text3);border-radius:50%;animation:typ 1.2s ease-in-out infinite;}
 .typing-indicator span:nth-child(2){animation-delay:.2s}.typing-indicator span:nth-child(3){animation-delay:.4s}
@@ -283,16 +231,14 @@ textarea::placeholder{color:var(--text3);}
 .toast.show{transform:translateX(-50%) translateY(0);}
 .audio-play-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent2);cursor:pointer;margin-top:6px;padding:4px 10px;background:rgba(124,106,247,.1);border-radius:8px;border:none;font-family:'DM Sans',sans-serif;}
 .session-info{font-size:11px;color:var(--text3);text-align:center;padding:8px;font-family:'DM Mono',monospace;}
+.summary-bubble{background:rgba(124,106,247,.08);border:1px solid rgba(124,106,247,.2);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--text2);margin:4px 0;line-height:1.5;}
 </style>
 </head>
 <body>
 <div class="header">
   <div class="header-left">
     <div class="status-dot" id="statusDot"></div>
-    <div>
-      <div class="header-title">Mi Asistente</div>
-      <div class="header-subtitle" id="statusText">cargando...</div>
-    </div>
+    <div><div class="header-title">Mi Asistente</div><div class="header-subtitle" id="statusText">cargando...</div></div>
   </div>
   <button class="settings-btn" onclick="openSettings()">⚙️</button>
 </div>
@@ -301,11 +247,11 @@ textarea::placeholder{color:var(--text3);}
   <div class="welcome" id="welcome">
     <div class="welcome-icon">🤖</div>
     <h2>Hola, soy tu asistente</h2>
-    <p>Toca 🎙️ para hablar o escribe. Recuerdo todo lo que hablamos.</p>
+    <p>Toca 🎙️ para hablar. Recuerdo todo lo que hablamos y aprendo de ti.</p>
     <div class="welcome-tips">
       <div class="tip" onclick="sendQuickMsg('¿Qué recuerdas de mí?')">🧠 ¿Qué recuerdas de mí?</div>
-      <div class="tip" onclick="sendQuickMsg('Hoy tengo que...')">📋 Hoy tengo que...</div>
-      <div class="tip" onclick="sendQuickMsg('Ayúdame a organizar mi semana')">📅 Organizar mi semana</div>
+      <div class="tip" onclick="sendQuickMsg('Resume lo que hemos hablado')">📋 Resume lo que hemos hablado</div>
+      <div class="tip" onclick="sendQuickMsg('Ayúdame a organizar mi día')">📅 Organizar mi día</div>
     </div>
   </div>
 </div>
@@ -327,7 +273,8 @@ textarea::placeholder{color:var(--text3);}
     <h3>⚙️ Configuración</h3>
     <div class="field"><label>API Key de Anthropic (Claude)</label><input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>API Key de OpenAI (voz)</label><input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" spellcheck="false"></div>
-    <div class="field"><label>Sobre ti</label><textarea id="systemPrompt" rows="4" style="resize:none">Eres mi asistente personal. Me llamo Adrián. Soy profesor, tengo una ONG y trabajo como SEO freelance. Eres directo, práctico y hablas siempre en español.</textarea></div>
+    <div class="field"><label>Sobre ti (contexto base)</label><textarea id="systemPrompt" rows="4" style="resize:none">Eres mi asistente personal inteligente. Me llamo Adrián. Soy profesor, tengo una ONG y trabajo como SEO freelance. Eres directo, práctico, proactivo. Siempre en español. Cuando no puedas hacer algo, dime qué necesitarías.</textarea></div>
+    <div class="field"><label>Velocidad de respuesta</label><select id="modelSelect"><option value="claude-haiku-4-5-20251001">Rápido (Haiku) — recomendado para voz</option><option value="claude-sonnet-4-5">Inteligente (Sonnet) — más capaz</option></select></div>
     <div class="field"><label>Voz</label><select id="voiceSelect"><option value="nova">Nova — clara (recomendada)</option><option value="alloy">Alloy — neutra</option><option value="echo">Echo — masculina</option><option value="fable">Fable — expresiva</option><option value="onyx">Onyx — grave</option><option value="shimmer">Shimmer — suave</option></select></div>
     <div class="field"><label>Responder por voz</label><select id="alwaysSpeak"><option value="match">Solo si yo hablo</option><option value="voice">Siempre</option><option value="never">Nunca</option></select></div>
     <button class="btn-save" onclick="saveSettings()">✅ Guardar</button>
@@ -335,28 +282,25 @@ textarea::placeholder{color:var(--text3);}
   </div>
 </div>
 <script>
-const SESSION_ID = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2,9);
-let config={claudeKey:'',openaiKey:'',systemPrompt:document.getElementById('systemPrompt').value,voice:'nova',alwaysSpeak:'match'};
-let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false;
-// Safari requiere desbloquear AudioContext con gesto del usuario
-let audioCtx=null;
+const SESSION_ID='s_'+Date.now()+'_'+Math.random().toString(36).substr(2,9);
+let config={claudeKey:'',openaiKey:'',systemPrompt:document.getElementById('systemPrompt').value,voice:'nova',alwaysSpeak:'match',model:'claude-haiku-4-5-20251001'};
+let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false,audioCtx=null,userProfile='{}';
+
 function unlockAudio(){
   if(audioCtx)return;
   try{
     audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    // Reproducir silencio para desbloquear
     const buf=audioCtx.createBuffer(1,1,22050);
     const src=audioCtx.createBufferSource();
     src.buffer=buf;src.connect(audioCtx.destination);src.start(0);
-    console.log('🔊 Audio desbloqueado');
   }catch(e){}
 }
 
 async function init(){
   loadConfig();
-  await loadHistory();
+  await loadProfileAndHistory();
   setStatus('listo');
-  if(!config.claudeKey) setTimeout(()=>{showToast('👆 Toca ⚙️ para añadir tus claves');openSettings();},800);
+  if(!config.claudeKey)setTimeout(()=>{showToast('👆 Toca ⚙️ para añadir tus claves');openSettings();},800);
 }
 
 function loadConfig(){
@@ -368,27 +312,47 @@ function loadConfig(){
     document.getElementById('systemPrompt').value=config.systemPrompt;
     document.getElementById('voiceSelect').value=config.voice||'nova';
     document.getElementById('alwaysSpeak').value=config.alwaysSpeak||'match';
+    document.getElementById('modelSelect').value=config.model||'claude-haiku-4-5-20251001';
   }catch(e){}
 }
 
-async function loadHistory(){
+async function loadProfileAndHistory(){
   try{
     setStatus('cargando memoria...');
-    const res=await fetch('/api/history?limit=30');
-    const data=await res.json();
-    if(data.messages&&data.messages.length>0){
+    // Cargar perfil
+    const pr=await fetch('/api/profile');
+    const pd=await pr.json();
+    if(pd.profile)userProfile=pd.profile;
+
+    // Cargar historial
+    const hr=await fetch('/api/history?limit=40');
+    const hd=await hr.json();
+    if(hd.messages&&hd.messages.length>0){
       hideWelcome();
-      data.messages.forEach(m=>{
-        addMessageToDOM(m.role,m.content,m.created_at,false);
-        messages.push({role:m.role,content:m.content});
-      });
+      // Si hay más de 20, mostrar resumen de los antiguos
+      if(hd.messages.length>20&&hd.summary){
+        const sum=document.createElement('div');
+        sum.className='session-info';
+        sum.innerHTML='<div class="summary-bubble">📝 Resumen de conversaciones anteriores:<br>'+escapeHtml(hd.summary)+'</div>';
+        document.getElementById('chat').appendChild(sum);
+        // Solo los últimos 20 al contexto
+        hd.messages.slice(-20).forEach(m=>{
+          addMessageToDOM(m.role,m.content,m.created_at,false);
+          messages.push({role:m.role,content:m.content});
+        });
+      }else{
+        hd.messages.forEach(m=>{
+          addMessageToDOM(m.role,m.content,m.created_at,false);
+          messages.push({role:m.role,content:m.content});
+        });
+      }
       const info=document.createElement('div');
       info.className='session-info';
-      info.textContent='↑ Historial recuperado ('+data.messages.length+' mensajes)';
+      info.textContent='↑ '+hd.messages.length+' mensajes recuperados';
       document.getElementById('chat').insertBefore(info,document.getElementById('chat').firstChild);
       scrollToBottom();
     }
-  }catch(e){console.log('Sin historial previo');}
+  }catch(e){console.log('Sin historial');}
 }
 
 function saveSettings(){
@@ -397,8 +361,9 @@ function saveSettings(){
   config.systemPrompt=document.getElementById('systemPrompt').value.trim();
   config.voice=document.getElementById('voiceSelect').value;
   config.alwaysSpeak=document.getElementById('alwaysSpeak').value;
+  config.model=document.getElementById('modelSelect').value;
   localStorage.setItem('asistente_config',JSON.stringify(config));
-  closeSettings();showToast('✅ Configuración guardada');setStatus('listo');
+  closeSettings();showToast('✅ Guardado');setStatus('listo');
 }
 function openSettings(){document.getElementById('modalOverlay').classList.add('open');}
 function closeSettings(){document.getElementById('modalOverlay').classList.remove('open');}
@@ -409,15 +374,16 @@ function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrol
 function updateSendBtn(){document.getElementById('sendBtn').disabled=!document.getElementById('textInput').value.trim()||isProcessing;}
 function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!document.getElementById('sendBtn').disabled)sendMessage();}}
 function scrollToBottom(){const c=document.getElementById('chat');setTimeout(()=>c.scrollTo({top:c.scrollHeight,behavior:'smooth'}),50);}
-function getTime(dateStr){if(dateStr)return new Date(dateStr).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});return new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}
+function getTime(d){if(d)return new Date(d).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});return new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}
 function hideWelcome(){const w=document.getElementById('welcome');if(w)w.remove();}
-function escapeHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>');}
+function escapeHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');}
 
 function addMessageToDOM(role,text,dateStr,animate){
   hideWelcome();
   const chat=document.getElementById('chat');
   const div=document.createElement('div');
-  div.className='msg '+role+(animate===false?' style="animation:none"':'');
+  div.className='msg '+role;
+  if(animate===false)div.style.animation='none';
   div.innerHTML='<div class="bubble">'+escapeHtml(text)+'</div><div class="msg-time">'+getTime(dateStr)+'</div>';
   chat.appendChild(div);
   if(animate!==false)scrollToBottom();
@@ -426,52 +392,49 @@ function addMessageToDOM(role,text,dateStr,animate){
 
 function addTyping(){
   hideWelcome();
-  const chat=document.getElementById('chat');
   const div=document.createElement('div');
   div.className='msg ai';div.id='typing';
   div.innerHTML='<div class="bubble"><div class="typing-indicator"><span></span><span></span><span></span></div></div>';
-  chat.appendChild(div);scrollToBottom();
+  document.getElementById('chat').appendChild(div);scrollToBottom();
 }
 function removeTyping(){const t=document.getElementById('typing');if(t)t.remove();}
 
 function addAIMessage(text,audioBlob){
   removeTyping();
-  const chat=document.getElementById('chat');
   const div=document.createElement('div');
   div.className='msg ai';
   let btn='';
   if(audioBlob){const u=URL.createObjectURL(audioBlob);btn='<br><button class="audio-play-btn" onclick="playAudio(\\''+u+'\\',this)">▶ Escuchar de nuevo</button>';}
   div.innerHTML='<div class="bubble">'+escapeHtml(text)+btn+'</div><div class="msg-time">'+getTime()+'</div>';
-  chat.appendChild(div);scrollToBottom();
+  document.getElementById('chat').appendChild(div);scrollToBottom();
   if(audioBlob)autoPlayAudio(audioBlob);
 }
 
-function playAudio(u,btn){if(currentAudio){currentAudio.pause();currentAudio=null;}currentAudio=new Audio(u);currentAudio.playsInline=true;btn.textContent='⏸ Reproduciendo...';currentAudio.play().catch(e=>console.log('play error:',e));currentAudio.onended=()=>{btn.textContent='▶ Escuchar de nuevo';};}
+function playAudio(u,btn){
+  if(currentAudio&&currentAudio.pause)currentAudio.pause();
+  currentAudio=new Audio(u);currentAudio.playsInline=true;
+  btn.textContent='⏸ Reproduciendo...';
+  currentAudio.play().catch(()=>{});
+  currentAudio.onended=()=>btn.textContent='▶ Escuchar de nuevo';
+}
 
 async function autoPlayAudio(blob){
-  if(currentAudio){currentAudio.pause();currentAudio=null;}
-  const url=URL.createObjectURL(blob);
-  // Método 1: AudioContext (funciona en Safari si fue desbloqueado)
-  if(audioCtx){
+  if(currentAudio&&currentAudio.pause)currentAudio.pause();
+  // Método AudioContext (Safari desbloqueado)
+  if(audioCtx&&audioCtx.state!=='suspended'){
     try{
-      const arrayBuf=await blob.arrayBuffer();
-      const audioBuf=await audioCtx.decodeAudioData(arrayBuf);
+      const ab=await blob.arrayBuffer();
+      const audioBuf=await audioCtx.decodeAudioData(ab);
       const src=audioCtx.createBufferSource();
-      src.buffer=audioBuf;src.connect(audioCtx.destination);
-      src.start(0);
-      // Guardar referencia para poder parar
-      currentAudio={pause:()=>src.stop(),url};
+      src.buffer=audioBuf;src.connect(audioCtx.destination);src.start(0);
+      currentAudio={pause:()=>{try{src.stop();}catch(e){}}};
       return;
-    }catch(e){console.log('AudioContext fallback:',e);}
+    }catch(e){console.log('AudioCtx err:',e);}
   }
-  // Método 2: Audio element normal
-  const audio=new Audio(url);
-  audio.playsInline=true;
-  currentAudio=audio;
-  audio.play().catch(e=>{
-    console.log('Autoplay bloqueado, mostrando botón');
-    // Si falla, el botón "Escuchar de nuevo" ya está visible
-  });
+  // Fallback Audio element
+  const audio=new Audio(URL.createObjectURL(blob));
+  audio.playsInline=true;currentAudio=audio;
+  audio.play().catch(()=>showToast('Toca ▶ para escuchar la respuesta'));
 }
 
 async function saveMessage(role,content){
@@ -496,7 +459,7 @@ async function toggleRecording(){
   if(isProcessing)return;
   if(isRecording){stopRecording();return;}
   if(!config.openaiKey){showToast('⚠️ Añade tu API Key de OpenAI en ⚙️');openSettings();return;}
-  unlockAudio(); // Desbloquear audio en el gesto del usuario
+  unlockAudio();
   try{
     const stream=await navigator.mediaDevices.getUserMedia({audio:true});
     audioChunks=[];
@@ -508,7 +471,7 @@ async function toggleRecording(){
     setStatus('grabando...','recording');
     recSeconds=0;document.getElementById('recTimer').textContent='0:00';
     recInterval=setInterval(()=>{recSeconds++;const m=Math.floor(recSeconds/60),s=recSeconds%60;document.getElementById('recTimer').textContent=m+':'+(s<10?'0':'')+s;},1000);
-  }catch(err){showToast('❌ Sin acceso al micrófono. Permite en Safari → Ajustes.');}
+  }catch(err){showToast('❌ Sin acceso al micrófono. Ajustes → Safari → Micrófono → Permitir');}
 }
 
 async function stopRecording(){
@@ -516,7 +479,7 @@ async function stopRecording(){
   isRecording=false;clearInterval(recInterval);
   document.getElementById('voiceBtn').classList.remove('recording');
   document.getElementById('recordingBar').classList.remove('active');
-  setStatus('procesando voz...');
+  setStatus('procesando...');
   mediaRecorder.stop();mediaRecorder.stream.getTracks().forEach(t=>t.stop());
   mediaRecorder.onstop=async()=>{
     const blob=new Blob(audioChunks,{type:getSupportedMimeType()});
@@ -541,17 +504,30 @@ async function transcribeAudio(blob){
   }catch(e){showToast('❌ Error de conexión');return null;}
 }
 
+function buildSystemPrompt(){
+  let sys=config.systemPrompt;
+  if(userProfile&&userProfile!=='{}'){
+    try{
+      const p=JSON.parse(userProfile);
+      sys+='\n\nLO QUE SÉ DE TI:\n'+Object.entries(p).map(([k,v])=>k+': '+v).join('\n');
+    }catch(e){}
+  }
+  return sys;
+}
+
 async function processMessage(userText){
   isProcessing=true;document.getElementById('sendBtn').disabled=true;
   setStatus('pensando...','thinking');addTyping();
   messages.push({role:'user',content:userText});
   try{
-    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claudeKey:config.claudeKey,systemPrompt:config.systemPrompt,messages:messages.slice(-20)})});
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claudeKey:config.claudeKey,systemPrompt:buildSystemPrompt(),messages:messages.slice(-20),model:config.model||'claude-haiku-4-5-20251001'})});
     const data=await res.json();
     if(data.content?.[0]){
       const reply=data.content[0].text;
       messages.push({role:'assistant',content:reply});
       await saveMessage('assistant',reply);
+      // Actualizar perfil en background cada 5 mensajes
+      if(messages.length%5===0)updateProfileBackground();
       const shouldSpeak=config.alwaysSpeak==='voice'||(config.alwaysSpeak==='match'&&lastInputWasVoice);
       if(shouldSpeak&&config.openaiKey){setStatus('generando voz...');const ab=await getTTS(reply);addAIMessage(reply,ab);}
       else addAIMessage(reply,null);
@@ -561,6 +537,15 @@ async function processMessage(userText){
     }
   }catch(e){removeTyping();showToast('❌ Error de conexión');setStatus('error');}
   isProcessing=false;updateSendBtn();
+}
+
+async function updateProfileBackground(){
+  try{
+    const recent=messages.slice(-10);
+    const res=await fetch('/api/profile/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claudeKey:config.claudeKey,messages:recent,currentProfile:userProfile})});
+    const data=await res.json();
+    if(data.profile)userProfile=data.profile;
+  }catch(e){}
 }
 
 async function getTTS(text){
@@ -576,48 +561,68 @@ init();
 </body>
 </html>`;
 
-// ── Router ─────────────────────────────────────────────────
+// ── Router ────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
   const path = parsed.pathname;
 
-  // CORS preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
     return res.end();
   }
 
   try {
-    // GET / — sirve la app
-    if (req.method === 'GET' && path === '/') {
-      return sendHTML(res, APP_HTML);
-    }
+    if (req.method === 'GET' && path === '/') return sendHTML(res, APP_HTML);
 
-    // GET /api/history — últimos N mensajes
     if (req.method === 'GET' && path === '/api/history') {
-      const limit = parseInt(parsed.query.limit) || 50;
-      const result = await pool.query(
-        'SELECT role, content, created_at FROM conversations ORDER BY created_at DESC LIMIT $1',
-        [limit]
-      );
-      return sendJSON(res, 200, { messages: result.rows.reverse() });
+      const limit = parseInt(parsed.query.limit) || 40;
+      const result = await pool.query('SELECT role, content, created_at FROM conversations ORDER BY created_at DESC LIMIT $1', [limit]);
+      const msgs = result.rows.reverse();
+      let summary = null;
+      // Si hay muchos mensajes, generar resumen de los más antiguos
+      if (msgs.length > 20) {
+        const old = await pool.query('SELECT role, content FROM conversations ORDER BY created_at DESC LIMIT 60 OFFSET 20');
+        if (old.rows.length > 0) {
+          const summaryRow = await pool.query("SELECT value FROM memory WHERE key='conversation_summary'");
+          summary = summaryRow.rows[0]?.value || null;
+        }
+      }
+      return sendJSON(res, 200, { messages: msgs, summary });
     }
 
-    // POST /api/messages — guardar mensaje
     if (req.method === 'POST' && path === '/api/messages') {
       const body = await parseBody(req);
-      await pool.query(
-        'INSERT INTO conversations (session_id, role, content) VALUES ($1, $2, $3)',
-        [body.session_id || 'default', body.role, body.content]
-      );
+      await pool.query('INSERT INTO conversations (session_id, role, content) VALUES ($1, $2, $3)', [body.session_id || 'default', body.role, body.content]);
+      // Cada 20 mensajes, generar resumen en background
+      const count = await pool.query('SELECT COUNT(*) FROM conversations');
+      if (parseInt(count.rows[0].count) % 20 === 0) {
+        pool.query('SELECT role, content FROM conversations ORDER BY created_at DESC LIMIT 40 OFFSET 20').then(async r => {
+          if (r.rows.length > 0 && body.claudeKey) {
+            const sum = await summarizeOldConversations(body.claudeKey, r.rows);
+            if (sum) await pool.query("INSERT INTO memory (key,value,updated_at) VALUES ('conversation_summary',$1,NOW()) ON CONFLICT (key) DO UPDATE SET value=$1,updated_at=NOW()", [sum]);
+          }
+        }).catch(() => {});
+      }
       return sendJSON(res, 200, { ok: true });
     }
 
-    // POST /api/chat — proxy a Claude
+    if (req.method === 'GET' && path === '/api/profile') {
+      const result = await pool.query('SELECT data FROM profile ORDER BY updated_at DESC LIMIT 1');
+      return sendJSON(res, 200, { profile: result.rows[0]?.data || null });
+    }
+
+    if (req.method === 'POST' && path === '/api/profile/update') {
+      const body = await parseBody(req);
+      const newProfile = await updateProfile(body.claudeKey, body.messages, body.currentProfile);
+      await pool.query('DELETE FROM profile');
+      await pool.query('INSERT INTO profile (data) VALUES ($1)', [newProfile]);
+      return sendJSON(res, 200, { profile: newProfile });
+    }
+
     if (req.method === 'POST' && path === '/api/chat') {
       const body = await parseBody(req);
       const result = await callClaude(body.claudeKey, {
-        model: 'claude-sonnet-4-5',
+        model: body.model || 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: body.systemPrompt,
         messages: body.messages
@@ -625,7 +630,6 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, result);
     }
 
-    // POST /api/transcribe — proxy a Whisper
     if (req.method === 'POST' && path === '/api/transcribe') {
       const parts = await parseMultipart(req);
       const apiKey = parts.openaiKey?.data.toString().trim();
@@ -635,33 +639,17 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, result);
     }
 
-    // POST /api/tts — proxy a OpenAI TTS
     if (req.method === 'POST' && path === '/api/tts') {
       const body = await parseBody(req);
-      const result = await callOpenAI('/v1/audio/speech', body.openaiKey, {
-        model: 'tts-1', input: body.text, voice: body.voice || 'nova'
-      }, true);
-      res.writeHead(200, {
-        'Content-Type': result.contentType || 'audio/mpeg',
-        'Access-Control-Allow-Origin': '*'
-      });
+      const result = await callOpenAI('/v1/audio/speech', body.openaiKey, { model: 'tts-1', input: body.text, voice: body.voice || 'nova' }, true);
+      res.writeHead(200, { 'Content-Type': result.contentType || 'audio/mpeg', 'Access-Control-Allow-Origin': '*' });
       return res.end(result.buffer);
     }
 
-    // POST /api/memory — guardar dato de memoria
-    if (req.method === 'POST' && path === '/api/memory') {
+    if (req.method === 'POST' && path === '/api/summarize') {
       const body = await parseBody(req);
-      await pool.query(
-        'INSERT INTO memory (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=NOW()',
-        [body.key, body.value]
-      );
-      return sendJSON(res, 200, { ok: true });
-    }
-
-    // GET /api/memory — leer memoria
-    if (req.method === 'GET' && path === '/api/memory') {
-      const result = await pool.query('SELECT key, value FROM memory ORDER BY updated_at DESC');
-      return sendJSON(res, 200, { memory: result.rows });
+      const summary = await summarizeOldConversations(body.claudeKey, body.messages);
+      return sendJSON(res, 200, { summary });
     }
 
     sendJSON(res, 404, { error: 'Not found' });
@@ -672,11 +660,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// ── Start ──────────────────────────────────────────────────
 initDB().then(() => {
-  server.listen(PORT, () => console.log('🚀 Servidor en puerto', PORT));
+  server.listen(PORT, () => console.log('🚀 Puerto', PORT));
 }).catch(err => {
-  console.error('Error conectando a la base de datos:', err);
-  // Arrancar igualmente sin DB
-  server.listen(PORT, () => console.log('⚠️ Servidor sin DB en puerto', PORT));
+  console.error('DB error:', err);
+  server.listen(PORT, () => console.log('⚠️ Sin DB, puerto', PORT));
 });
