@@ -230,6 +230,10 @@ textarea::placeholder{color:var(--text3);}
 .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-80px);background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 18px;border-radius:20px;font-size:13px;z-index:200;transition:transform .3s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;max-width:90vw;text-align:center;}
 .toast.show{transform:translateX(-50%) translateY(0);}
 .audio-play-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent2);cursor:pointer;margin-top:6px;padding:4px 10px;background:rgba(124,106,247,.1);border-radius:8px;border:none;font-family:'DM Sans',sans-serif;}
+.audio-big-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:10px;padding:16px 20px;background:var(--accent);color:white;border:none;border-radius:16px;font-family:'DM Sans',sans-serif;font-size:17px;font-weight:500;cursor:pointer;letter-spacing:0.02em;transition:all .15s;}
+.audio-big-btn:active{transform:scale(.97);background:#6d5ce6;}
+.audio-big-btn.playing{background:#1d9e75;}
+.audio-big-btn.playing::before{content:'⏸ ';}.audio-big-btn:not(.playing)::before{content:'▶ ';}
 .session-info{font-size:11px;color:var(--text3);text-align:center;padding:8px;font-family:'DM Mono',monospace;}
 .summary-bubble{background:rgba(124,106,247,.08);border:1px solid rgba(124,106,247,.2);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--text2);margin:4px 0;line-height:1.5;}
 </style>
@@ -404,7 +408,7 @@ function addAIMessage(text,audioBlob){
   const div=document.createElement('div');
   div.className='msg ai';
   let btn='';
-  if(audioBlob){const u=URL.createObjectURL(audioBlob);btn='<br><button class="audio-play-btn" onclick="playAudio(\\''+u+'\\',this)">▶ Escuchar de nuevo</button>';}
+  if(audioBlob){const u=URL.createObjectURL(audioBlob);btn='<br><button class="audio-big-btn" onclick="playAudio(\\''+u+'\\',this)">▶ Escuchar</button>';}
   div.innerHTML='<div class="bubble">'+escapeHtml(text)+btn+'</div><div class="msg-time">'+getTime()+'</div>';
   document.getElementById('chat').appendChild(div);scrollToBottom();
   if(audioBlob)autoPlayAudio(audioBlob);
@@ -412,10 +416,12 @@ function addAIMessage(text,audioBlob){
 
 function playAudio(u,btn){
   if(currentAudio&&currentAudio.pause)currentAudio.pause();
+  // Resetear todos los botones
+  document.querySelectorAll('.audio-big-btn').forEach(b=>{b.classList.remove('playing');b.textContent='▶ Escuchar';});
   currentAudio=new Audio(u);currentAudio.playsInline=true;
-  btn.textContent='⏸ Reproduciendo...';
+  btn.classList.add('playing');btn.textContent='⏸ Reproduciendo...';
   currentAudio.play().catch(()=>{});
-  currentAudio.onended=()=>btn.textContent='▶ Escuchar de nuevo';
+  currentAudio.onended=()=>{btn.classList.remove('playing');btn.textContent='▶ Escuchar';};
 }
 
 async function autoPlayAudio(blob){
