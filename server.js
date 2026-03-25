@@ -480,6 +480,13 @@ async function stopRecording(){
   document.getElementById('voiceBtn').classList.remove('recording');
   document.getElementById('recordingBar').classList.remove('active');
   setStatus('procesando...');
+  // SAFARI FIX: silencio inmediato para mantener AudioContext activo
+  try{
+    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    const s=audioCtx.createBuffer(1,audioCtx.sampleRate*0.1,audioCtx.sampleRate);
+    const n=audioCtx.createBufferSource();n.buffer=s;n.connect(audioCtx.destination);n.start(0);
+  }catch(e){}
   mediaRecorder.stop();mediaRecorder.stream.getTracks().forEach(t=>t.stop());
   mediaRecorder.onstop=async()=>{
     const blob=new Blob(audioChunks,{type:getSupportedMimeType()});
