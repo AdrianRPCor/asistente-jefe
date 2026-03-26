@@ -281,13 +281,14 @@ textarea::placeholder{color:var(--text3);}
     <div class="field"><label>Velocidad de respuesta</label><select id="modelSelect"><option value="claude-haiku-4-5-20251001">Rápido (Haiku) — recomendado para voz</option><option value="claude-sonnet-4-5">Inteligente (Sonnet) — más capaz</option></select></div>
     <div class="field"><label>Voz</label><select id="voiceSelect"><option value="nova">Nova — clara (recomendada)</option><option value="alloy">Alloy — neutra</option><option value="echo">Echo — masculina</option><option value="fable">Fable — expresiva</option><option value="onyx">Onyx — grave</option><option value="shimmer">Shimmer — suave</option></select></div>
     <div class="field"><label>Responder por voz</label><select id="alwaysSpeak"><option value="match">Solo si yo hablo</option><option value="voice">Siempre</option><option value="never">Nunca</option></select></div>
+    <div class="field"><label>N8n — Webhook Gmail</label><input type="text" id="n8nGmailUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/gmail-manager" autocomplete="off" spellcheck="false"></div>
     <button class="btn-save" onclick="saveSettings()">✅ Guardar</button>
     <button class="btn-cancel" onclick="closeSettings()">Cancelar</button>
   </div>
 </div>
 <script>
 const SESSION_ID='s_'+Date.now()+'_'+Math.random().toString(36).substr(2,9);
-let config={claudeKey:'',openaiKey:'',systemPrompt:document.getElementById('systemPrompt').value,voice:'nova',alwaysSpeak:'match',model:'claude-haiku-4-5-20251001'};
+let config={claudeKey:'',openaiKey:'',systemPrompt:document.getElementById('systemPrompt').value,voice:'nova',alwaysSpeak:'match',model:'claude-haiku-4-5-20251001',n8nGmailUrl:''};
 let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false,audioCtx=null,userProfile='{}';
 
 function unlockAudio(){
@@ -317,6 +318,7 @@ function loadConfig(){
     document.getElementById('voiceSelect').value=config.voice||'nova';
     document.getElementById('alwaysSpeak').value=config.alwaysSpeak||'match';
     document.getElementById('modelSelect').value=config.model||'claude-haiku-4-5-20251001';
+    document.getElementById('n8nGmailUrl').value=config.n8nGmailUrl||'';
   }catch(e){}
 }
 
@@ -366,6 +368,7 @@ function saveSettings(){
   config.voice=document.getElementById('voiceSelect').value;
   config.alwaysSpeak=document.getElementById('alwaysSpeak').value;
   config.model=document.getElementById('modelSelect').value;
+  config.n8nGmailUrl=document.getElementById('n8nGmailUrl').value.trim();
   localStorage.setItem('asistente_config',JSON.stringify(config));
   closeSettings();showToast('✅ Guardado');setStatus('listo');
 }
@@ -532,7 +535,7 @@ async function processMessage(userText){
   setStatus('pensando...','thinking');addTyping();
   messages.push({role:'user',content:userText});
   try{
-    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claudeKey:config.claudeKey,systemPrompt:buildSystemPrompt(),messages:messages.slice(-20),model:config.model||'claude-haiku-4-5-20251001'})});
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claudeKey:config.claudeKey,systemPrompt:buildSystemPrompt(),messages:messages.slice(-20),model:config.model||'claude-haiku-4-5-20251001',n8nGmailUrl:config.n8nGmailUrl||''})});
     const data=await res.json();
     if(data.content?.[0]){
       const reply=data.content[0].text;
@@ -633,6 +636,26 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && path === '/api/chat') {
       const body = await parseBody(req);
+      const lastMsg = body.messages[body.messages.length - 1]?.content || '';
+      
+      // Detectar si es una petición de email y redirigir a N8n
+      const emailIntent = detectEmailIntent(lastMsg);
+      if (emailIntent && body.n8nGmailUrl) {
+        try {
+          const n8nResult = await callN8n(body.n8nGmailUrl, emailIntent);
+          if (n8nResult.result) {
+            // Pedir a Claude que formatee la respuesta de N8n de forma natural
+            const formattedResult = await callClaude(body.claudeKey, {
+              model: body.model || 'claude-haiku-4-5-20251001',
+              max_tokens: 1024,
+              system: body.systemPrompt + '\n\nSe te proporciona información de Gmail. Preséntala de forma natural y útil en español, como si fuera tu propia respuesta.',
+              messages: [...body.messages.slice(-10), { role: 'user', content: 'Datos de Gmail: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }]
+            });
+            return sendJSON(res, 200, formattedResult);
+          }
+        } catch(e) { console.log('N8n error:', e.message); }
+      }
+      
       const result = await callClaude(body.claudeKey, {
         model: body.model || 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
