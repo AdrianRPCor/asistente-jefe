@@ -22,7 +22,7 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_session ON conversations(session_id);
     CREATE INDEX IF NOT EXISTS idx_memory_key ON memory(key);
   `);
-  console.log('✅ DB lista - v4.NOREGEX');
+  console.log('✅ DB lista - v5.FINAL');
 }
 
 function parseBody(req) {
@@ -397,7 +397,7 @@ function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!do
 function scrollToBottom(){const c=document.getElementById('chat');setTimeout(()=>c.scrollTo({top:c.scrollHeight,behavior:'smooth'}),50);}
 function getTime(d){if(d)return new Date(d).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});return new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}
 function hideWelcome(){const w=document.getElementById('welcome');if(w)w.remove();}
-function escapeHtml(t){return t.split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('\n').join('<br>');}
+function escapeHtml(t){var s=t;s=s.split(String.fromCharCode(38)).join("&amp;");s=s.split(String.fromCharCode(60)).join("&lt;");s=s.split(String.fromCharCode(62)).join("&gt;");s=s.split(String.fromCharCode(10)).join("<br>");return s;}
 
 function addMessageToDOM(role,text,dateStr,animate){
   hideWelcome();
