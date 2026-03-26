@@ -290,7 +290,7 @@ textarea::placeholder{color:var(--text3);}
 </div>
 <script>
 const SESSION_ID='s_'+Date.now()+'_'+Math.random().toString(36).substr(2,9);
-let config={claudeKey:'',openaiKey:'',systemPrompt:document.getElementById('systemPrompt').value,voice:'nova',alwaysSpeak:'match',model:'claude-haiku-4-5-20251001',n8nGmailPersonalUrl:'',n8nGmailOngUrl:'',n8nCalendarUrl:''};
+let config={claudeKey:'',openaiKey:'',systemPrompt:document.getElementById('systemPrompt').value,voice:'nova',alwaysSpeak:'match',model:'claude-haiku-4-5-20251001',n8nGmailPersonalUrl:'',n8nGmailOngUrl:'',n8nCalendarUrl:'',n8nCreatorUrl:'https://n8n-production-893e.up.railway.app/webhook/agente-creador',n8nApiKey:'',n8nBaseUrl:'https://n8n-production-893e.up.railway.app'};
 let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false,audioCtx=null,userProfile='{}';
 
 function unlockAudio(){
@@ -541,7 +541,7 @@ async function processMessage(userText){
   setStatus('pensando...','thinking');addTyping();
   messages.push({role:'user',content:userText});
   try{
-    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claudeKey:config.claudeKey,systemPrompt:buildSystemPrompt(),messages:messages.slice(-20),model:config.model||'claude-haiku-4-5-20251001',n8nGmailPersonalUrl:config.n8nGmailPersonalUrl||'',n8nGmailOngUrl:config.n8nGmailOngUrl||'',n8nCalendarUrl:config.n8nCalendarUrl||''})});
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claudeKey:config.claudeKey,systemPrompt:buildSystemPrompt(),messages:messages.slice(-20),model:config.model||'claude-haiku-4-5-20251001',n8nGmailPersonalUrl:config.n8nGmailPersonalUrl||'',n8nGmailOngUrl:config.n8nGmailOngUrl||'',n8nCalendarUrl:config.n8nCalendarUrl||'',n8nCreatorUrl:config.n8nCreatorUrl||'',n8nApiKey:config.n8nApiKey||'',n8nBaseUrl:config.n8nBaseUrl||''})});
     const data=await res.json();
     if(data.content?.[0]){
       const reply=data.content[0].text;
@@ -619,9 +619,17 @@ function detectEmailIntent(text) {
 
 function detectCalendarIntent(text) {
   const t = text.toLowerCase();
-  if (t.match(/qu[ée] tengo|agenda|citas|reuniones|eventos|calendario|hoy|ma[ñn]ana|semana/)) return { action: 'leer' };
-  if (t.match(/crea|crear|a[ñn]ade|a[ñn]adir|pon|poner.*reunión|poner.*cita|nueva.*reunión/)) return { action: 'crear', content: text };
-  if (t.match(/cancela|cancelar|borra|borrar.*reunión|elimina.*evento/)) return { action: 'eliminar', content: text };
+  if (t.match(/qu[eé] tengo|agenda|citas|reuniones|eventos|calendario|hoy|ma[nñ]ana|semana/)) return { action: 'leer' };
+  if (t.match(/crea|crear|a[nñ]ade|a[nñ]adir|pon|poner.*reuni[oó]n|poner.*cita|nueva.*reuni[oó]n/)) return { action: 'crear', content: text };
+  if (t.match(/cancela|cancelar|borra|borrar.*reuni[oó]n|elimina.*evento/)) return { action: 'eliminar', content: text };
+  return null;
+}
+
+function detectCreatorIntent(text) {
+  const t = text.toLowerCase();
+  if (t.match(/crea un flujo|crear un flujo|crea una automatizaci[oó]n|automatiza|quiero que cuando|cada vez que.*haz|programa un flujo/)) {
+    return { descripcion: text };
+  }
   return null;
 }
 
@@ -722,6 +730,33 @@ const server = http.createServer(async (req, res) => {
             return sendJSON(res, 200, formattedResult);
           }
         } catch(e) { console.log('Calendar N8n error:', e.message); }
+      }
+
+      // Detectar intención de crear flujo
+      const creatorIntent = detectCreatorIntent(lastMsg);
+      if (creatorIntent && body.n8nCreatorUrl) {
+        try {
+          const creatorPayload = {
+            descripcion: creatorIntent.descripcion,
+            claudeKey: body.claudeKey,
+            n8nApiKey: body.n8nApiKey,
+            n8nBaseUrl: body.n8nBaseUrl,
+            gmailPersonalId: 'rbWXlxnCksIz0CGT',
+            gmailOngId: '6mzgNDRrVjdcFxeW',
+            calendarId: 'HvELZK69w31VzDgn',
+            anthropicId: 'MRjeQ5orOy0YoqbT'
+          };
+          const n8nResult = await callN8n(body.n8nCreatorUrl, creatorPayload);
+          if (n8nResult.result) {
+            const formattedResult = await callClaude(body.claudeKey, {
+              model: body.model || 'claude-haiku-4-5-20251001',
+              max_tokens: 512,
+              system: body.systemPrompt,
+              messages: [...body.messages.slice(-5), { role: 'user', content: 'Resultado de crear flujo: ' + n8nResult.result }]
+            });
+            return sendJSON(res, 200, formattedResult);
+          }
+        } catch(e) { console.log('Creator N8n error:', e.message); }
       }
       
       const result = await callClaude(body.claudeKey, {
