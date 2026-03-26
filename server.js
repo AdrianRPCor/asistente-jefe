@@ -329,13 +329,16 @@ function loadConfig(){
 async function loadProfileAndHistory(){
   try{
     setStatus('cargando memoria...');
-    // Cargar perfil
-    const pr=await fetch('/api/profile');
+    // Timeout de seguridad - si tarda más de 5s, continuar igual
+    const timeout = new Promise((_,reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+    
+    // Cargar perfil con timeout
+    const pr=await Promise.race([fetch('/api/profile'), timeout]);
     const pd=await pr.json();
     if(pd.profile)userProfile=pd.profile;
 
-    // Cargar historial
-    const hr=await fetch('/api/history?limit=40');
+    // Cargar historial con timeout
+    const hr=await Promise.race([fetch('/api/history?limit=40'), timeout]);
     const hd=await hr.json();
     if(hd.messages&&hd.messages.length>0){
       hideWelcome();
@@ -362,7 +365,7 @@ async function loadProfileAndHistory(){
       document.getElementById('chat').insertBefore(info,document.getElementById('chat').firstChild);
       scrollToBottom();
     }
-  }catch(e){console.log('Sin historial');}
+  }catch(e){console.log('Sin historial o timeout:', e.message);}
 }
 
 function saveSettings(){
