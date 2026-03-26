@@ -329,16 +329,16 @@ function loadConfig(){
 async function loadProfileAndHistory(){
   try{
     setStatus('cargando memoria...');
-    // Timeout de seguridad - si tarda más de 5s, continuar igual
-    const timeout = new Promise((_,reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+    // Timeout independiente por fetch - 5s cada uno
+    const mkTimeout=()=>new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),5000));
     
     // Cargar perfil con timeout
-    const pr=await Promise.race([fetch('/api/profile'), timeout]);
+    const pr=await Promise.race([fetch('/api/profile'), mkTimeout()]);
     const pd=await pr.json();
     if(pd.profile)userProfile=pd.profile;
 
     // Cargar historial con timeout
-    const hr=await Promise.race([fetch('/api/history?limit=40'), timeout]);
+    const hr=await Promise.race([fetch('/api/history?limit=40'), mkTimeout()]);
     const hd=await hr.json();
     if(hd.messages&&hd.messages.length>0){
       hideWelcome();
