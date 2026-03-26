@@ -576,6 +576,40 @@ init();
 </body>
 </html>`;
 
+// ── Llamar a N8n ──────────────────────────────────────────
+function callN8n(webhookUrl, data) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(data);
+    const u = new URL(webhookUrl);
+    const isHttps = u.protocol === 'https:';
+    const lib = isHttps ? require('https') : require('http');
+    const options = {
+      hostname: u.hostname,
+      port: u.port || (isHttps ? 443 : 80),
+      path: u.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    };
+    const req = lib.request(options, res => {
+      let b = ''; res.on('data', c => b += c);
+      res.on('end', () => { try { resolve(JSON.parse(b)); } catch(e) { resolve({ result: b }); } });
+    });
+    req.on('error', reject); req.write(body); req.end();
+  });
+}
+
+function detectEmailIntent(text) {
+  const t = text.toLowerCase();
+  if (t.match(/lee|leer|revisar|revisa|tengo.*email|correo.*nuevo|bandeja|no leidos|no leidos/)) return { action: 'leer' };
+  if (t.match(/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre/)) {
+    return { action: 'buscar', query: text };
+  }
+  if (t.match(/prioriza|priorizar|importante|urgente|organiza.*correo|organizar.*email/)) return { action: 'priorizar' };
+  if (t.match(/envia|enviar|manda|mandar.*email|escribe.*email|redacta.*para|escribe.*para/)) return { action: 'redactar', content: text };
+  if (t.match(/responde|responder|contesta|contestar.*email/)) return { action: 'responder' };
+  return null;
+}
+
 // ── Router ────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
