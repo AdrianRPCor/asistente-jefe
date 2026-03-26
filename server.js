@@ -392,7 +392,7 @@ function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!do
 function scrollToBottom(){const c=document.getElementById('chat');setTimeout(()=>c.scrollTo({top:c.scrollHeight,behavior:'smooth'}),50);}
 function getTime(d){if(d)return new Date(d).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});return new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}
 function hideWelcome(){const w=document.getElementById('welcome');if(w)w.remove();}
-function escapeHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');}
+function escapeHtml(t){return t.replace(/&/g,'&amp;').replace(/[<]/g,'&lt;').replace(/[>]/g,'&gt;').replace(/\n/g,'<br>');}
 
 function addMessageToDOM(role,text,dateStr,animate){
   hideWelcome();
