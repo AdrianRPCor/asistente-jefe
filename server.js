@@ -408,7 +408,7 @@ function addAIMessage(text,audioBlob){
   const div=document.createElement('div');
   div.className='msg ai';
   let btn='';
-  if(audioBlob){const u=URL.createObjectURL(audioBlob);btn='<br><button class="audio-big-btn" onclick="playAudio(\\''+u+'\\',this)">▶ Escuchar</button>';}
+  if(audioBlob){const u=URL.createObjectURL(audioBlob);btn='<br><button data-audiobtn=\'1\' style="display:block;width:100%;margin-top:12px;padding:18px 20px;background:#7c6af7;color:white;border:none;border-radius:16px;data-audiobtn=\"1\" font-size:18px;font-weight:600;cursor:pointer;text-align:center;" onclick=\'playAudio(\''+u+'\',this)\'>▶ Escuchar respuesta</button>';}
   div.innerHTML='<div class="bubble">'+escapeHtml(text)+btn+'</div><div class="msg-time">'+getTime()+'</div>';
   document.getElementById('chat').appendChild(div);scrollToBottom();
   if(audioBlob)autoPlayAudio(audioBlob);
@@ -416,12 +416,11 @@ function addAIMessage(text,audioBlob){
 
 function playAudio(u,btn){
   if(currentAudio&&currentAudio.pause)currentAudio.pause();
-  // Resetear todos los botones
-  document.querySelectorAll('.audio-big-btn').forEach(b=>{b.classList.remove('playing');b.textContent='▶ Escuchar';});
+  document.querySelectorAll('[data-audiobtn]').forEach(b=>{b.style.background='#7c6af7';b.textContent='\u25b6 Escuchar respuesta';});
   currentAudio=new Audio(u);currentAudio.playsInline=true;
-  btn.classList.add('playing');btn.textContent='⏸ Reproduciendo...';
-  currentAudio.play().catch(()=>{});
-  currentAudio.onended=()=>{btn.classList.remove('playing');btn.textContent='▶ Escuchar';};
+  btn.style.background='#1d9e75';btn.textContent='\u23f8 Reproduciendo...';
+  currentAudio.play().catch(()=>{btn.textContent='\u25b6 Escuchar respuesta';});
+  currentAudio.onended=()=>{btn.style.background='#7c6af7';btn.textContent='\u25b6 Escuchar respuesta';};
 }
 
 async function autoPlayAudio(blob){
