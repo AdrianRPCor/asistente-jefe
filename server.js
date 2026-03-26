@@ -281,14 +281,16 @@ textarea::placeholder{color:var(--text3);}
     <div class="field"><label>Velocidad de respuesta</label><select id="modelSelect"><option value="claude-haiku-4-5-20251001">Rápido (Haiku) — recomendado para voz</option><option value="claude-sonnet-4-5">Inteligente (Sonnet) — más capaz</option></select></div>
     <div class="field"><label>Voz</label><select id="voiceSelect"><option value="nova">Nova — clara (recomendada)</option><option value="alloy">Alloy — neutra</option><option value="echo">Echo — masculina</option><option value="fable">Fable — expresiva</option><option value="onyx">Onyx — grave</option><option value="shimmer">Shimmer — suave</option></select></div>
     <div class="field"><label>Responder por voz</label><select id="alwaysSpeak"><option value="match">Solo si yo hablo</option><option value="voice">Siempre</option><option value="never">Nunca</option></select></div>
-    <div class="field"><label>N8n — Webhook Gmail</label><input type="text" id="n8nGmailUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/gmail-manager" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n — Gmail Personal</label><input type="text" id="n8nGmailPersonalUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/..." autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n — Gmail ONG</label><input type="text" id="n8nGmailOngUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/gmail-manager" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n — Google Calendar</label><input type="text" id="n8nCalendarUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/calendar" autocomplete="off" spellcheck="false"></div>
     <button class="btn-save" onclick="saveSettings()">✅ Guardar</button>
     <button class="btn-cancel" onclick="closeSettings()">Cancelar</button>
   </div>
 </div>
 <script>
 const SESSION_ID='s_'+Date.now()+'_'+Math.random().toString(36).substr(2,9);
-let config={claudeKey:'',openaiKey:'',systemPrompt:document.getElementById('systemPrompt').value,voice:'nova',alwaysSpeak:'match',model:'claude-haiku-4-5-20251001',n8nGmailUrl:''};
+let config={claudeKey:'',openaiKey:'',systemPrompt:document.getElementById('systemPrompt').value,voice:'nova',alwaysSpeak:'match',model:'claude-haiku-4-5-20251001',n8nGmailPersonalUrl:'',n8nGmailOngUrl:'',n8nCalendarUrl:''};
 let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false,audioCtx=null,userProfile='{}';
 
 function unlockAudio(){
@@ -318,7 +320,9 @@ function loadConfig(){
     document.getElementById('voiceSelect').value=config.voice||'nova';
     document.getElementById('alwaysSpeak').value=config.alwaysSpeak||'match';
     document.getElementById('modelSelect').value=config.model||'claude-haiku-4-5-20251001';
-    document.getElementById('n8nGmailUrl').value=config.n8nGmailUrl||'';
+    document.getElementById('n8nGmailPersonalUrl').value=config.n8nGmailPersonalUrl||'';
+    document.getElementById('n8nGmailOngUrl').value=config.n8nGmailOngUrl||'';
+    document.getElementById('n8nCalendarUrl').value=config.n8nCalendarUrl||'';
   }catch(e){}
 }
 
@@ -368,7 +372,9 @@ function saveSettings(){
   config.voice=document.getElementById('voiceSelect').value;
   config.alwaysSpeak=document.getElementById('alwaysSpeak').value;
   config.model=document.getElementById('modelSelect').value;
-  config.n8nGmailUrl=document.getElementById('n8nGmailUrl').value.trim();
+  config.n8nGmailPersonalUrl=document.getElementById('n8nGmailPersonalUrl').value.trim();
+  config.n8nGmailOngUrl=document.getElementById('n8nGmailOngUrl').value.trim();
+  config.n8nCalendarUrl=document.getElementById('n8nCalendarUrl').value.trim();
   localStorage.setItem('asistente_config',JSON.stringify(config));
   closeSettings();showToast('✅ Guardado');setStatus('listo');
 }
@@ -535,7 +541,7 @@ async function processMessage(userText){
   setStatus('pensando...','thinking');addTyping();
   messages.push({role:'user',content:userText});
   try{
-    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claudeKey:config.claudeKey,systemPrompt:buildSystemPrompt(),messages:messages.slice(-20),model:config.model||'claude-haiku-4-5-20251001',n8nGmailUrl:config.n8nGmailUrl||''})});
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claudeKey:config.claudeKey,systemPrompt:buildSystemPrompt(),messages:messages.slice(-20),model:config.model||'claude-haiku-4-5-20251001',n8nGmailPersonalUrl:config.n8nGmailPersonalUrl||'',n8nGmailOngUrl:config.n8nGmailOngUrl||'',n8nCalendarUrl:config.n8nCalendarUrl||''})});
     const data=await res.json();
     if(data.content?.[0]){
       const reply=data.content[0].text;
@@ -600,13 +606,22 @@ function callN8n(webhookUrl, data) {
 
 function detectEmailIntent(text) {
   const t = text.toLowerCase();
-  if (t.match(/lee|leer|revisar|revisa|tengo.*email|correo.*nuevo|bandeja|no leidos|no leidos/)) return { action: 'leer' };
-  if (t.match(/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre/)) {
-    return { action: 'buscar', query: text };
-  }
-  if (t.match(/prioriza|priorizar|importante|urgente|organiza.*correo|organizar.*email/)) return { action: 'priorizar' };
-  if (t.match(/envia|enviar|manda|mandar.*email|escribe.*email|redacta.*para|escribe.*para/)) return { action: 'redactar', content: text };
-  if (t.match(/responde|responder|contesta|contestar.*email/)) return { action: 'responder' };
+  // Detectar qué cuenta usar
+  const isOng = t.match(/ong|proyecto arena|arena educacion|asociacion/);
+  const account = isOng ? 'ong' : 'personal';
+  if (t.match(/lee|leer|revisar|revisa|tengo.*email|correo.*nuevo|bandeja|no leidos|no leidos/)) return { action: 'leer', account };
+  if (t.match(/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre/)) return { action: 'buscar', query: text, account };
+  if (t.match(/prioriza|priorizar|importante|urgente|organiza.*correo|organizar.*email/)) return { action: 'priorizar', account };
+  if (t.match(/envia|enviar|manda|mandar.*email|escribe.*email|redacta.*para|escribe.*para/)) return { action: 'redactar', content: text, account };
+  if (t.match(/responde|responder|contesta|contestar.*email/)) return { action: 'responder', account };
+  return null;
+}
+
+function detectCalendarIntent(text) {
+  const t = text.toLowerCase();
+  if (t.match(/qu[ée] tengo|agenda|citas|reuniones|eventos|calendario|hoy|ma[ñn]ana|semana/)) return { action: 'leer' };
+  if (t.match(/crea|crear|a[ñn]ade|a[ñn]adir|pon|poner.*reunión|poner.*cita|nueva.*reunión/)) return { action: 'crear', content: text };
+  if (t.match(/cancela|cancelar|borra|borrar.*reunión|elimina.*evento/)) return { action: 'eliminar', content: text };
   return null;
 }
 
@@ -672,22 +687,41 @@ const server = http.createServer(async (req, res) => {
       const body = await parseBody(req);
       const lastMsg = body.messages[body.messages.length - 1]?.content || '';
       
-      // Detectar si es una petición de email y redirigir a N8n
+      // Detectar intención de email
       const emailIntent = detectEmailIntent(lastMsg);
-      if (emailIntent && body.n8nGmailUrl) {
+      if (emailIntent) {
+        const gmailUrl = emailIntent.account === 'ong' ? body.n8nGmailOngUrl : body.n8nGmailPersonalUrl;
+        if (gmailUrl) {
+          try {
+            const n8nResult = await callN8n(gmailUrl, emailIntent);
+            if (n8nResult.result) {
+              const formattedResult = await callClaude(body.claudeKey, {
+                model: body.model || 'claude-haiku-4-5-20251001',
+                max_tokens: 1024,
+                system: body.systemPrompt + '\n\nSe te proporciona información de Gmail. Preséntala de forma natural y útil en español.',
+                messages: [...body.messages.slice(-10), { role: 'user', content: 'Datos de Gmail: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }]
+              });
+              return sendJSON(res, 200, formattedResult);
+            }
+          } catch(e) { console.log('Gmail N8n error:', e.message); }
+        }
+      }
+
+      // Detectar intención de calendario
+      const calendarIntent = detectCalendarIntent(lastMsg);
+      if (calendarIntent && body.n8nCalendarUrl) {
         try {
-          const n8nResult = await callN8n(body.n8nGmailUrl, emailIntent);
+          const n8nResult = await callN8n(body.n8nCalendarUrl, calendarIntent);
           if (n8nResult.result) {
-            // Pedir a Claude que formatee la respuesta de N8n de forma natural
             const formattedResult = await callClaude(body.claudeKey, {
               model: body.model || 'claude-haiku-4-5-20251001',
               max_tokens: 1024,
-              system: body.systemPrompt + '\n\nSe te proporciona información de Gmail. Preséntala de forma natural y útil en español, como si fuera tu propia respuesta.',
-              messages: [...body.messages.slice(-10), { role: 'user', content: 'Datos de Gmail: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }]
+              system: body.systemPrompt + '\n\nSe te proporciona información de Google Calendar. Preséntala de forma natural y útil en español.',
+              messages: [...body.messages.slice(-10), { role: 'user', content: 'Datos de Calendar: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }]
             });
             return sendJSON(res, 200, formattedResult);
           }
-        } catch(e) { console.log('N8n error:', e.message); }
+        } catch(e) { console.log('Calendar N8n error:', e.message); }
       }
       
       const result = await callClaude(body.claudeKey, {
