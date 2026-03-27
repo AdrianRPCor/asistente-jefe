@@ -1009,10 +1009,24 @@ function detectEmailIntent(text = '') {
     return { action: 'redactar', content: text, account };
   }
   if (/responde|responder|contesta|contestar.*email/.test(t)) {
-    return { action: 'responder', account };
-  }
-
-  return null;
+      return { action: 'responder', account };
+    }
+    if (/elimina|eliminar|borra|borrar|suprime|suprimir/.test(t)) {
+      return { action: 'eliminar', account };
+    }
+    if (/archiva|archivar/.test(t)) {
+      return { action: 'archivar', account };
+    }
+    if (/marca.*le[ií]do|marcar.*le[ií]do|marca.*no le[ií]do/.test(t)) {
+      const markAs = /no le[ií]do/.test(t) ? 'noleido' : 'leido';
+      return { action: 'marcar', markAs, account };
+    }
+    if (/en lote|todos los de|elimina.*de|archiva.*de|borra.*de/.test(t)) {
+      const loteAction = /archiva/.test(t) ? 'archivar' : 'eliminar';
+      return { action: 'lote', loteAction, criteria: text, account };
+    }
+  
+    return null;
 }
 
 function detectCalendarIntent(text = '') {
