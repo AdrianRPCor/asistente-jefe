@@ -42,7 +42,7 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_memory_key ON memory(key);
   `);
 
-  console.log('✅ DB lista');
+  console.log('✅ DB lista - v6.N8NKEY');
 }
 
 function parseBody(req) {
@@ -81,7 +81,12 @@ function sendJSON(res, status, data) {
 }
 
 function sendHTML(res, html) {
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
   res.end(html);
 }
 
@@ -428,18 +433,18 @@ textarea::placeholder{color:var(--text3);}
     <div class="status-dot" id="statusDot"></div>
     <div><div class="header-title">Mi Asistente</div><div class="header-subtitle" id="statusText">cargando...</div></div>
   </div>
-  <button class="settings-btn" onclick="openSettings()">⚙️</button>
+  <button class="settings-btn" onclick="openSettings()">&#9881;&#65039;</button>
 </div>
 <div class="toast" id="toast"></div>
 <div class="chat" id="chat">
   <div class="welcome" id="welcome">
-    <div class="welcome-icon">🤖</div>
+    <div class="welcome-icon">&#129302;</div>
     <h2>Hola, soy tu asistente</h2>
-    <p>Toca 🎙️ para hablar. Recuerdo todo lo que hablamos y aprendo de ti.</p>
+    <p>Toca &#127897;&#65039; para hablar. Recuerdo todo lo que hablamos y aprendo de ti.</p>
     <div class="welcome-tips">
-      <div class="tip" onclick="sendQuickMsg('¿Qué recuerdas de mí?')">🧠 ¿Qué recuerdas de mí?</div>
-      <div class="tip" onclick="sendQuickMsg('Resume lo que hemos hablado')">📋 Resume lo que hemos hablado</div>
-      <div class="tip" onclick="sendQuickMsg('Ayúdame a organizar mi día')">📅 Organizar mi día</div>
+      <div class="tip" onclick="sendQuickMsg('Que recuerdas de mi?')">&#129504; Que recuerdas de mi?</div>
+      <div class="tip" onclick="sendQuickMsg('Resume lo que hemos hablado')">&#128203; Resume lo que hemos hablado</div>
+      <div class="tip" onclick="sendQuickMsg('Ayudame a organizar mi dia')">&#128197; Organizar mi dia</div>
     </div>
   </div>
 </div>
@@ -447,28 +452,30 @@ textarea::placeholder{color:var(--text3);}
   <div class="recording-bar" id="recordingBar">
     <div class="rec-left"><div class="rec-dot"></div><span class="rec-text">Grabando...</span></div>
     <span class="rec-time" id="recTimer">0:00</span>
-    <button class="btn-stop-rec" onclick="stopRecording()">⏹ Enviar</button>
+    <button class="btn-stop-rec" onclick="stopRecording()">&#9209; Enviar</button>
   </div>
   <div class="input-row">
     <textarea id="textInput" placeholder="Escribe un mensaje..." rows="1" oninput="autoResize(this);updateSendBtn()" onkeydown="handleKey(event)"></textarea>
-    <button class="btn-voice" id="voiceBtn" onclick="toggleRecording()">🎙️</button>
-    <button class="btn-send" id="sendBtn" onclick="sendMessage()" disabled>↑</button>
+    <button class="btn-voice" id="voiceBtn" onclick="toggleRecording()">&#127897;&#65039;</button>
+    <button class="btn-send" id="sendBtn" onclick="sendMessage()" disabled>&#8593;</button>
   </div>
 </div>
 <div class="modal-overlay" id="modalOverlay" onclick="handleOverlayClick(event)">
   <div class="modal">
     <div class="modal-handle"></div>
-    <h3>⚙️ Configuración</h3>
+    <h3>&#9881;&#65039; Configuracion</h3>
     <div class="field"><label>API Key de Anthropic (Claude)</label><input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>API Key de OpenAI (voz)</label><input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" spellcheck="false"></div>
-    <div class="field"><label>Sobre ti (contexto base)</label><textarea id="systemPrompt" rows="4" style="resize:none">Eres mi asistente personal inteligente. Me llamo Adrián. Soy profesor, tengo una ONG y trabajo como SEO freelance. Eres directo, práctico, proactivo. Siempre en español. Cuando no puedas hacer algo, dime qué necesitarías.</textarea></div>
-    <div class="field"><label>Velocidad de respuesta</label><select id="modelSelect"><option value="claude-haiku-4-5-20251001">Rápido (Haiku) — recomendado para voz</option><option value="claude-sonnet-4-5-20250929">Inteligente (Sonnet)</option></select></div>
-    <div class="field"><label>Voz</label><select id="voiceSelect"><option value="nova">Nova — clara (recomendada)</option><option value="alloy">Alloy — neutra</option><option value="echo">Echo — masculina</option><option value="fable">Fable — expresiva</option><option value="onyx">Onyx — grave</option><option value="shimmer">Shimmer — suave</option></select></div>
+    <div class="field"><label>Sobre ti (contexto base)</label><textarea id="systemPrompt" rows="4" style="resize:none">Eres mi asistente personal inteligente. Me llamo Adrian. Soy profesor, tengo una ONG y trabajo como SEO freelance. Eres directo, practico, proactivo. Siempre en espanol. Cuando no puedas hacer algo, dime que necesitarias.</textarea></div>
+    <div class="field"><label>Velocidad de respuesta</label><select id="modelSelect"><option value="claude-haiku-4-5-20251001">Rapido (Haiku) - recomendado para voz</option><option value="claude-sonnet-4-5-20250929">Inteligente (Sonnet)</option></select></div>
+    <div class="field"><label>Voz</label><select id="voiceSelect"><option value="nova">Nova - clara (recomendada)</option><option value="alloy">Alloy - neutra</option><option value="echo">Echo - masculina</option><option value="fable">Fable - expresiva</option><option value="onyx">Onyx - grave</option><option value="shimmer">Shimmer - suave</option></select></div>
     <div class="field"><label>Responder por voz</label><select id="alwaysSpeak"><option value="match">Solo si yo hablo</option><option value="voice">Siempre</option><option value="never">Nunca</option></select></div>
-    <div class="field"><label>N8n — Gmail Personal</label><input type="text" id="n8nGmailPersonalUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/..." autocomplete="off" spellcheck="false"></div>
-    <div class="field"><label>N8n — Gmail ONG</label><input type="text" id="n8nGmailOngUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/gmail-manager" autocomplete="off" spellcheck="false"></div>
-    <div class="field"><label>N8n — Google Calendar</label><input type="text" id="n8nCalendarUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/calendar" autocomplete="off" spellcheck="false"></div>
-    <button class="btn-save" onclick="saveSettings()">✅ Guardar</button>
+    <div class="field"><label>N8n - Gmail Personal</label><input type="text" id="n8nGmailPersonalUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/..." autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n - Gmail ONG</label><input type="text" id="n8nGmailOngUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/gmail-manager" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n - Google Calendar</label><input type="text" id="n8nCalendarUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/calendar-manager" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n API Key</label><input type="password" id="n8nApiKey" placeholder="tu-api-key-de-n8n" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n Base URL</label><input type="text" id="n8nBaseUrl" placeholder="https://n8n-production-893e.up.railway.app" autocomplete="off" spellcheck="false"></div>
+    <button class="btn-save" onclick="saveSettings()">Guardar</button>
     <button class="btn-cancel" onclick="closeSettings()">Cancelar</button>
   </div>
 </div>
@@ -505,7 +512,7 @@ async function init(){
   loadConfig();
   await loadProfileAndHistory();
   setStatus('listo');
-  if(!config.claudeKey)setTimeout(()=>{showToast('👆 Toca ⚙️ para añadir tus claves');openSettings();},800);
+  if(!config.claudeKey)setTimeout(()=>{showToast('Toca el engranaje para anadir tus claves');openSettings();},800);
 }
 
 function loadConfig(){
@@ -521,6 +528,8 @@ function loadConfig(){
     document.getElementById('n8nGmailPersonalUrl').value=config.n8nGmailPersonalUrl||'';
     document.getElementById('n8nGmailOngUrl').value=config.n8nGmailOngUrl||'';
     document.getElementById('n8nCalendarUrl').value=config.n8nCalendarUrl||'';
+    document.getElementById('n8nApiKey').value=config.n8nApiKey||'';
+    document.getElementById('n8nBaseUrl').value=config.n8nBaseUrl||'https://n8n-production-893e.up.railway.app';
   }catch(e){}
 }
 
@@ -542,7 +551,7 @@ async function loadProfileAndHistory(){
       if(hd.messages.length>20&&hd.summary){
         const sum=document.createElement('div');
         sum.className='session-info';
-        sum.innerHTML='<div class="summary-bubble">📝 Resumen de conversaciones anteriores:<br>'+escapeHtml(hd.summary)+'</div>';
+        sum.innerHTML='<div class="summary-bubble">Resumen de conversaciones anteriores:<br>'+escapeHtml(hd.summary)+'</div>';
         document.getElementById('chat').appendChild(sum);
 
         hd.messages.slice(-20).forEach(m=>{
@@ -558,7 +567,7 @@ async function loadProfileAndHistory(){
 
       const info=document.createElement('div');
       info.className='session-info';
-      info.textContent='↑ '+hd.messages.length+' mensajes recuperados';
+      info.textContent=hd.messages.length+' mensajes recuperados';
       document.getElementById('chat').insertBefore(info,document.getElementById('chat').firstChild);
       scrollToBottom();
     }
@@ -577,9 +586,12 @@ function saveSettings(){
   config.n8nGmailPersonalUrl=document.getElementById('n8nGmailPersonalUrl').value.trim();
   config.n8nGmailOngUrl=document.getElementById('n8nGmailOngUrl').value.trim();
   config.n8nCalendarUrl=document.getElementById('n8nCalendarUrl').value.trim();
+  config.n8nApiKey=document.getElementById('n8nApiKey').value.trim();
+  config.n8nBaseUrl=document.getElementById('n8nBaseUrl').value.trim()||'https://n8n-production-893e.up.railway.app';
   localStorage.setItem('asistente_config',JSON.stringify(config));
-  closeSettings();showToast('✅ Guardado');setStatus('listo');
+  closeSettings();showToast('Guardado');setStatus('listo');
 }
+
 function openSettings(){document.getElementById('modalOverlay').classList.add('open');}
 function closeSettings(){document.getElementById('modalOverlay').classList.remove('open');}
 function handleOverlayClick(e){if(e.target===document.getElementById('modalOverlay'))closeSettings();}
@@ -591,7 +603,7 @@ function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!do
 function scrollToBottom(){const c=document.getElementById('chat');setTimeout(()=>c.scrollTo({top:c.scrollHeight,behavior:'smooth'}),50);}
 function getTime(d){if(d)return new Date(d).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});return new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}
 function hideWelcome(){const w=document.getElementById('welcome');if(w)w.remove();}
-function escapeHtml(t){return String(t).replace(/&/g,'&amp;').replace(/[<]/g,'&lt;').replace(/[>]/g,'&gt;').replace(/\\n/g,'<br>');}
+function escapeHtml(t){return String(t).replace(/&/g,'&amp;').replace(/[<]/g,'&lt;').replace(/[>]/g,'&gt;').replace(/\n/g,'<br>');}
 
 function addMessageToDOM(role,text,dateStr,animate){
   hideWelcome();
@@ -628,7 +640,7 @@ function addAIMessage(text,audioBlob){
   let btn='';
   if(audioBlob){
     const u=URL.createObjectURL(audioBlob);
-    btn='<br><button data-audiobtn="1" style="display:block;width:100%;margin-top:12px;padding:18px 20px;background:#7c6af7;color:white;border:none;border-radius:16px;font-size:18px;font-weight:600;cursor:pointer;text-align:center;" onclick="playAudio(\\''+u+'\\',this)">▶ Escuchar respuesta</button>';
+    btn='<br><button data-audiobtn="1" style="display:block;width:100%;margin-top:12px;padding:18px 20px;background:#7c6af7;color:white;border:none;border-radius:16px;font-size:18px;font-weight:600;cursor:pointer;text-align:center;" onclick="playAudio(\''+u+'\',this)">Escuchar respuesta</button>';
   }
 
   div.innerHTML='<div class="bubble">'+escapeHtml(text)+btn+'</div><div class="msg-time">'+getTime()+'</div>';
@@ -641,18 +653,18 @@ function playAudio(u,btn){
   if(currentAudio&&currentAudio.pause)currentAudio.pause();
   document.querySelectorAll('[data-audiobtn]').forEach(b=>{
     b.style.background='#7c6af7';
-    b.textContent='▶ Escuchar respuesta';
+    b.textContent='Escuchar respuesta';
   });
   currentAudio=new Audio(u);
   currentAudio.playsInline=true;
   btn.style.background='#1d9e75';
-  btn.textContent='⏸ Reproduciendo...';
+  btn.textContent='Reproduciendo...';
   currentAudio.play().catch(()=>{
-    btn.textContent='▶ Escuchar respuesta';
+    btn.textContent='Escuchar respuesta';
   });
   currentAudio.onended=()=>{
     btn.style.background='#7c6af7';
-    btn.textContent='▶ Escuchar respuesta';
+    btn.textContent='Escuchar respuesta';
   };
 }
 
@@ -677,7 +689,7 @@ async function autoPlayAudio(blob){
   const audio=new Audio(URL.createObjectURL(blob));
   audio.playsInline=true;
   currentAudio=audio;
-  audio.play().catch(()=>showToast('Toca ▶ para escuchar la respuesta'));
+  audio.play().catch(()=>showToast('Toca para escuchar la respuesta'));
 }
 
 async function saveMessage(role,content){
@@ -701,7 +713,7 @@ async function sendMessage(){
 
   if(!text||isProcessing)return;
   if(!config.claudeKey){
-    showToast('⚠️ Añade tu API Key en ⚙️');
+    showToast('Anade tu API Key en el engranaje');
     openSettings();
     return;
   }
@@ -726,7 +738,7 @@ async function toggleRecording(){
   if(isProcessing)return;
   if(isRecording){stopRecording();return;}
   if(!config.openaiKey){
-    showToast('⚠️ Añade tu API Key de OpenAI en ⚙️');
+    showToast('Anade tu API Key de OpenAI en el engranaje');
     openSettings();
     return;
   }
@@ -751,7 +763,7 @@ async function toggleRecording(){
       document.getElementById('recTimer').textContent=m+':'+(s<10?'0':'')+s;
     },1000);
   }catch(err){
-    showToast('❌ Sin acceso al micrófono');
+    showToast('Sin acceso al microfono');
     setStatus('listo');
   }
 }
@@ -780,7 +792,7 @@ async function stopRecording(){
   mediaRecorder.onstop=async()=>{
     const blob=new Blob(audioChunks,{type:getSupportedMimeType()});
     if(blob.size<500||recSeconds<1){
-      showToast('Grabación muy corta');
+      showToast('Grabacion muy corta');
       setStatus('listo');
       return;
     }
@@ -816,10 +828,10 @@ async function transcribeAudio(blob){
     const res=await fetch('/api/transcribe',{method:'POST',body:fd});
     const data=await res.json();
     if(data.text)return data.text.trim();
-    showToast('❌ Error al transcribir');
+    showToast('Error al transcribir');
     return null;
   }catch(e){
-    showToast('❌ Error de conexión');
+    showToast('Error de conexion');
     return null;
   }
 }
@@ -829,7 +841,7 @@ function buildSystemPrompt(){
   if(userProfile&&userProfile!=='{}'){
     try{
       const p=JSON.parse(userProfile);
-      sys+='\\n\\nLO QUE SÉ DE TI:\\n'+Object.entries(p).map(([k,v])=>k+': '+v).join('\\n');
+      sys+='\\n\\nLO QUE SE DE TI:\\n'+Object.entries(p).map(([k,v])=>k+': '+v).join('\\n');
     }catch(e){}
   }
   return sys;
@@ -862,7 +874,7 @@ async function processMessage(userText){
 
     const data=await res.json();
 
-    if(data.content?.[0]){
+    if(data.content&&data.content[0]){
       const reply=data.content[0].text;
       messages.push({role:'assistant',content:reply});
       await saveMessage('assistant',reply);
@@ -881,12 +893,12 @@ async function processMessage(userText){
       setStatus('listo');
     }else{
       removeTyping();
-      showToast('❌ '+(data.error?.message||'Error. Revisa tu API Key.'));
+      showToast('Error. Revisa tu API Key.');
       setStatus('error');
     }
   }catch(e){
     removeTyping();
-    showToast('❌ Error de conexión');
+    showToast('Error de conexion');
     setStatus('error');
   }
 
@@ -979,49 +991,30 @@ function callN8n(webhookUrl, data) {
   });
 }
 
-function detectEmailIntent(text = '') {
-  const t = text.toLowerCase();
+function detectEmailIntent(text) {
+  const t = (text || '').toLowerCase();
   const isOng = /ong|proyecto arena|arena educacion|asociacion/.test(t);
   const account = isOng ? 'ong' : 'personal';
 
-  if (/lee|leer|revisar|revisa|tengo.*email|correo.*nuevo|bandeja|no le[ií]dos/.test(t)) {
-    return { action: 'leer', account };
-  }
-  if (/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre/.test(t)) {
-    return { action: 'buscar', query: text, account };
-  }
-  if (/prioriza|priorizar|importante|urgente|organiza.*correo|organizar.*email/.test(t)) {
-    return { action: 'priorizar', account };
-  }
-  if (/envia|enviar|manda|mandar.*email|escribe.*email|redacta.*para|escribe.*para/.test(t)) {
-    return { action: 'redactar', content: text, account };
-  }
-  if (/responde|responder|contesta|contestar.*email/.test(t)) {
-    return { action: 'responder', account };
-  }
-
+  if (/lee|leer|revisar|revisa|tengo.*email|correo.*nuevo|bandeja|no le[ii]dos/.test(t)) return { action: 'leer', account };
+  if (/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre/.test(t)) return { action: 'buscar', query: text, account };
+  if (/prioriza|priorizar|importante|urgente|organiza.*correo|organizar.*email/.test(t)) return { action: 'priorizar', account };
+  if (/envia|enviar|manda|mandar.*email|escribe.*email|redacta.*para|escribe.*para/.test(t)) return { action: 'redactar', content: text, account };
+  if (/responde|responder|contesta|contestar.*email/.test(t)) return { action: 'responder', account };
   return null;
 }
 
-function detectCalendarIntent(text = '') {
-  const t = text.toLowerCase();
-
-  if (/qu[eé] tengo|agenda|citas|reuniones|eventos|calendario|hoy|ma[nñ]ana|semana/.test(t)) {
-    return { action: 'leer' };
-  }
-  if (/crea|crear|a[nñ]ade|a[nñ]adir|pon|poner.*reuni[oó]n|poner.*cita|nueva.*reuni[oó]n/.test(t)) {
-    return { action: 'crear', content: text };
-  }
-  if (/cancela|cancelar|borra|borrar.*reuni[oó]n|elimina.*evento/.test(t)) {
-    return { action: 'eliminar', content: text };
-  }
-
+function detectCalendarIntent(text) {
+  const t = (text || '').toLowerCase();
+  if (/qu[ee] tengo|agenda|citas|reuniones|eventos|calendario|hoy|ma[nn]ana|semana/.test(t)) return { action: 'leer' };
+  if (/crea|crear|a[nn]ade|a[nn]adir|pon|poner.*reuni[oo]n|poner.*cita|nueva.*reuni[oo]n/.test(t)) return { action: 'crear', content: text };
+  if (/cancela|cancelar|borra|borrar.*reuni[oo]n|elimina.*evento/.test(t)) return { action: 'eliminar', content: text };
   return null;
 }
 
-function detectCreatorIntent(text = '') {
-  const t = text.toLowerCase();
-  if (/crea un flujo|crear un flujo|crea una automatizaci[oó]n|automatiza|quiero que cuando|cada vez que.*haz|programa un flujo/.test(t)) {
+function detectCreatorIntent(text) {
+  const t = (text || '').toLowerCase();
+  if (/crea un flujo|crear un flujo|crea una automatizaci[oo]n|automatiza|quiero que cuando|cada vez que.*haz|programa un flujo/.test(t)) {
     return { descripcion: text };
   }
   return null;
@@ -1055,9 +1048,7 @@ const server = http.createServer(async (req, res) => {
 
       let summary = null;
       if (msgs.length > 20) {
-        const summaryRow = await pool.query(
-          "SELECT value FROM memory WHERE key='conversation_summary'"
-        );
+        const summaryRow = await pool.query("SELECT value FROM memory WHERE key='conversation_summary'");
         summary = summaryRow.rows[0]?.value || null;
       }
 
@@ -1078,17 +1069,13 @@ const server = http.createServer(async (req, res) => {
 
       const count = await pool.query('SELECT COUNT(*) FROM conversations');
       if (parseInt(count.rows[0].count, 10) % 20 === 0 && body.claudeKey) {
-        pool
-          .query('SELECT role, content FROM conversations ORDER BY created_at DESC LIMIT 40 OFFSET 20')
+        pool.query('SELECT role, content FROM conversations ORDER BY created_at DESC LIMIT 40 OFFSET 20')
           .then(async r => {
             if (r.rows.length > 0) {
               const sum = await summarizeOldConversations(body.claudeKey, r.rows);
               if (sum) {
                 await pool.query(
-                  `INSERT INTO memory (key, value, updated_at)
-                   VALUES ('conversation_summary', $1, NOW())
-                   ON CONFLICT (key)
-                   DO UPDATE SET value = $1, updated_at = NOW()`,
+                  `INSERT INTO memory (key, value, updated_at) VALUES ('conversation_summary', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
                   [sum]
                 );
               }
@@ -1108,29 +1095,22 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/profile/update') {
       const body = await parseBody(req);
       const newProfile = await updateProfile(body.claudeKey, body.messages || [], body.currentProfile);
-
       await pool.query('DELETE FROM profile');
       await pool.query('INSERT INTO profile (data) VALUES ($1)', [newProfile || '{}']);
-
       return sendJSON(res, 200, { profile: newProfile || '{}' });
     }
 
     if (req.method === 'POST' && path === '/api/chat') {
       const body = await parseBody(req);
 
-      if (!body.claudeKey) {
-        return sendJSON(res, 400, { error: 'Falta claudeKey' });
-      }
-      if (!Array.isArray(body.messages) || body.messages.length === 0) {
-        return sendJSON(res, 400, { error: 'messages es obligatorio' });
-      }
+      if (!body.claudeKey) return sendJSON(res, 400, { error: 'Falta claudeKey' });
+      if (!Array.isArray(body.messages) || body.messages.length === 0) return sendJSON(res, 400, { error: 'messages es obligatorio' });
 
       const lastMsg = body.messages[body.messages.length - 1]?.content || '';
 
       const emailIntent = detectEmailIntent(lastMsg);
       if (emailIntent) {
         const gmailUrl = emailIntent.account === 'ong' ? body.n8nGmailOngUrl : body.n8nGmailPersonalUrl;
-
         if (gmailUrl) {
           try {
             const n8nResult = await callN8n(gmailUrl, emailIntent);
@@ -1138,17 +1118,12 @@ const server = http.createServer(async (req, res) => {
               const formattedResult = await callClaude(body.claudeKey, {
                 model: body.model || 'claude-haiku-4-5-20251001',
                 max_tokens: 1024,
-                system: (body.systemPrompt || '') + '\n\nSe te proporciona información de Gmail. Preséntala de forma natural y útil en español.',
-                messages: [
-                  ...body.messages.slice(-10),
-                  { role: 'user', content: 'Datos de Gmail: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }
-                ]
+                system: (body.systemPrompt || '') + '\n\nSe te proporciona informacion de Gmail. Presentala de forma natural y util en espanol.',
+                messages: [...body.messages.slice(-10), { role: 'user', content: 'Datos de Gmail: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }]
               });
               return sendJSON(res, 200, formattedResult);
             }
-          } catch (e) {
-            console.log('Gmail N8n error:', e.message);
-          }
+          } catch (e) { console.log('Gmail N8n error:', e.message); }
         }
       }
 
@@ -1160,17 +1135,12 @@ const server = http.createServer(async (req, res) => {
             const formattedResult = await callClaude(body.claudeKey, {
               model: body.model || 'claude-haiku-4-5-20251001',
               max_tokens: 1024,
-              system: (body.systemPrompt || '') + '\n\nSe te proporciona información de Google Calendar. Preséntala de forma natural y útil en español.',
-              messages: [
-                ...body.messages.slice(-10),
-                { role: 'user', content: 'Datos de Calendar: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }
-              ]
+              system: (body.systemPrompt || '') + '\n\nSe te proporciona informacion de Google Calendar. Presentala de forma natural y util en espanol.',
+              messages: [...body.messages.slice(-10), { role: 'user', content: 'Datos de Calendar: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }]
             });
             return sendJSON(res, 200, formattedResult);
           }
-        } catch (e) {
-          console.log('Calendar N8n error:', e.message);
-        }
+        } catch (e) { console.log('Calendar N8n error:', e.message); }
       }
 
       const creatorIntent = detectCreatorIntent(lastMsg);
@@ -1186,23 +1156,17 @@ const server = http.createServer(async (req, res) => {
             calendarId: 'HvELZK69w31VzDgn',
             anthropicId: 'MRjeQ5orOy0YoqbT'
           };
-
           const n8nResult = await callN8n(body.n8nCreatorUrl, creatorPayload);
           if (n8nResult.result) {
             const formattedResult = await callClaude(body.claudeKey, {
               model: body.model || 'claude-haiku-4-5-20251001',
               max_tokens: 512,
               system: body.systemPrompt || '',
-              messages: [
-                ...body.messages.slice(-5),
-                { role: 'user', content: 'Resultado de crear flujo: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }
-              ]
+              messages: [...body.messages.slice(-5), { role: 'user', content: 'Resultado de crear flujo: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }]
             });
             return sendJSON(res, 200, formattedResult);
           }
-        } catch (e) {
-          console.log('Creator N8n error:', e.message);
-        }
+        } catch (e) { console.log('Creator N8n error:', e.message); }
       }
 
       const result = await callClaude(body.claudeKey, {
@@ -1211,7 +1175,6 @@ const server = http.createServer(async (req, res) => {
         system: body.systemPrompt || '',
         messages: body.messages
       });
-
       return sendJSON(res, 200, result);
     }
 
@@ -1219,44 +1182,16 @@ const server = http.createServer(async (req, res) => {
       const parts = await parseMultipart(req);
       const apiKey = parts.openaiKey?.data?.toString().trim();
       const audio = parts.file;
-
-      if (!audio || !apiKey) {
-        return sendJSON(res, 400, { error: 'Missing data' });
-      }
-
-      const result = await callWhisper(
-        apiKey,
-        audio.data,
-        audio.contentType,
-        audio.filename || 'audio.webm'
-      );
-
+      if (!audio || !apiKey) return sendJSON(res, 400, { error: 'Missing data' });
+      const result = await callWhisper(apiKey, audio.data, audio.contentType, audio.filename || 'audio.webm');
       return sendJSON(res, 200, result);
     }
 
     if (req.method === 'POST' && path === '/api/tts') {
       const body = await parseBody(req);
-
-      if (!body.openaiKey || !body.text) {
-        return sendJSON(res, 400, { error: 'Faltan datos para TTS' });
-      }
-
-      const result = await callOpenAI(
-        '/v1/audio/speech',
-        body.openaiKey,
-        {
-          model: 'tts-1',
-          input: body.text,
-          voice: body.voice || 'nova'
-        },
-        true
-      );
-
-      res.writeHead(200, {
-        'Content-Type': result.contentType || 'audio/mpeg',
-        'Access-Control-Allow-Origin': '*'
-      });
-
+      if (!body.openaiKey || !body.text) return sendJSON(res, 400, { error: 'Faltan datos para TTS' });
+      const result = await callOpenAI('/v1/audio/speech', body.openaiKey, { model: 'tts-1', input: body.text, voice: body.voice || 'nova' }, true);
+      res.writeHead(200, { 'Content-Type': result.contentType || 'audio/mpeg', 'Access-Control-Allow-Origin': '*' });
       return res.end(result.buffer);
     }
 
@@ -1267,6 +1202,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     return sendJSON(res, 404, { error: 'Not found' });
+
   } catch (err) {
     console.error('Error:', err);
     return sendJSON(res, 500, { error: err.message });
@@ -1275,9 +1211,9 @@ const server = http.createServer(async (req, res) => {
 
 initDB()
   .then(() => {
-    server.listen(PORT, () => console.log('🚀 Puerto', PORT));
+    server.listen(PORT, () => console.log('Puerto', PORT));
   })
   .catch(err => {
-    console.error('❌ DB error:', err);
+    console.error('DB error:', err);
     process.exit(1);
   });
