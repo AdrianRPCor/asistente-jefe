@@ -1150,7 +1150,7 @@ const server = http.createServer(async (req, res) => {
               const formattedResult = await callClaude(body.claudeKey, {
                 model: body.model || 'claude-haiku-4-5-20251001',
                 max_tokens: 1024,
-                system: (body.systemPrompt || '') + '\n\nSe te proporciona informacion de Gmail con lista detallada de emails (ID, remitente, asunto, fecha, extracto). Presenta la informacion de forma natural y util en espanol. Ordena por fecha si la tienes. Indica claramente cual es el mas reciente. Si el usuario pregunta por un email especifico, localizado en la lista por remitente o asunto. Nunca digas que no tienes acceso si tienes datos.',
+                system: (body.systemPrompt || '') + '\n\nSe te proporciona informacion de Gmail. La cuenta es: ' + emailIntent.account + '. Los emails que ves son EXCLUSIVAMENTE de esa cuenta. NO mezcles con otras cuentas. Presenta la informacion de forma natural en espanol, ordenada por fecha. El [1] es el mas reciente. Nunca digas que no tienes acceso si tienes datos.',
                 messages: [
                   ...body.messages.slice(-10),
                   { role: 'user', content: 'Peticion del usuario: ' + lastMsg + '\n\nDatos de Gmail recibidos:\n' + JSON.stringify(n8nResult).substring(0, 4000) }
