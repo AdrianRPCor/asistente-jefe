@@ -540,7 +540,7 @@ async function loadProfileAndHistory(){
     const pd=await pr.json();
     if(pd.profile)userProfile=pd.profile;
 
-    const hr=await Promise.race([fetch('/api/history?limit=40'), mkTimeout()]);
+    const hr=await Promise.race([fetch('/api/history?limit=6'), mkTimeout()]);
     const hd=await hr.json();
 
     if(hd.messages&&hd.messages.length>0){
@@ -1058,7 +1058,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/history') {
-      const limit = parseInt(parsed.query.limit, 10) || 40;
+      const limit = parseInt(parsed.query.limit, 10) || 6;
       const result = await pool.query(
         'SELECT role, content, created_at FROM conversations ORDER BY created_at DESC LIMIT $1',
         [limit]
