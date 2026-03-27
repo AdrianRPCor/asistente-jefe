@@ -996,7 +996,7 @@ function detectEmailIntent(text = '') {
   const isTrabajo = /trabajo|colegio|azaraque|instituto/.test(t);
   const account = isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal';
 
-  if (/lee|leer|revisar|revisa|tengo.*email|correo.*nuevo|bandeja|no le[ií]dos/.test(t)) {
+  if (/lee|leer|revisar|revisa|tengo.*email|correo.*nuevo|bandeja|no le[ií]dos|ltimo.*correo|ultimo.*correo|ltimo.*email|ultimo.*email|qu.*correo|qu.*email|bandeja/.test(t)) {
     return { action: 'leer', account };
   }
   if (/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre/.test(t)) {
@@ -1150,10 +1150,10 @@ const server = http.createServer(async (req, res) => {
               const formattedResult = await callClaude(body.claudeKey, {
                 model: body.model || 'claude-haiku-4-5-20251001',
                 max_tokens: 1024,
-                system: (body.systemPrompt || '') + '\n\nSe te proporciona información de Gmail. Preséntala de forma natural y útil en español.',
+                system: (body.systemPrompt || '') + '\n\nSe te proporciona informacion de Gmail con lista detallada de emails (ID, remitente, asunto, fecha, extracto). Presenta la informacion de forma natural y util en espanol. Ordena por fecha si la tienes. Indica claramente cual es el mas reciente. Si el usuario pregunta por un email especifico, localizado en la lista por remitente o asunto. Nunca digas que no tienes acceso si tienes datos.',
                 messages: [
                   ...body.messages.slice(-10),
-                  { role: 'user', content: 'Datos de Gmail: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }
+                  { role: 'user', content: 'Peticion del usuario: ' + lastMsg + '\n\nDatos de Gmail recibidos:\n' + JSON.stringify(n8nResult).substring(0, 4000) }
                 ]
               });
               return sendJSON(res, 200, formattedResult);
