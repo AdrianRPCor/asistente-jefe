@@ -468,6 +468,8 @@ textarea::placeholder{color:var(--text3);}
     <div class="field"><label>N8n — Gmail Personal</label><input type="text" id="n8nGmailPersonalUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/..." autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>N8n — Gmail ONG</label><input type="text" id="n8nGmailOngUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/gmail-manager" autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>N8n — Google Calendar</label><input type="text" id="n8nCalendarUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/calendar" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n API Key</label><input type="password" id="n8nApiKey" placeholder="tu-api-key-de-n8n" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n Base URL</label><input type="text" id="n8nBaseUrl" placeholder="https://n8n-production-893e.up.railway.app" autocomplete="off" spellcheck="false"></div>
     <button class="btn-save" onclick="saveSettings()">✅ Guardar</button>
     <button class="btn-cancel" onclick="closeSettings()">Cancelar</button>
   </div>
@@ -521,6 +523,8 @@ function loadConfig(){
     document.getElementById('n8nGmailPersonalUrl').value=config.n8nGmailPersonalUrl||'';
     document.getElementById('n8nGmailOngUrl').value=config.n8nGmailOngUrl||'';
     document.getElementById('n8nCalendarUrl').value=config.n8nCalendarUrl||'';
+    document.getElementById('n8nApiKey').value=config.n8nApiKey||'';
+    document.getElementById('n8nBaseUrl').value=config.n8nBaseUrl||'https://n8n-production-893e.up.railway.app';
   }catch(e){}
 }
 
@@ -577,6 +581,8 @@ function saveSettings(){
   config.n8nGmailPersonalUrl=document.getElementById('n8nGmailPersonalUrl').value.trim();
   config.n8nGmailOngUrl=document.getElementById('n8nGmailOngUrl').value.trim();
   config.n8nCalendarUrl=document.getElementById('n8nCalendarUrl').value.trim();
+  config.n8nApiKey=document.getElementById('n8nApiKey').value.trim();
+  config.n8nBaseUrl=document.getElementById('n8nBaseUrl').value.trim()||'https://n8n-production-893e.up.railway.app';
   localStorage.setItem('asistente_config',JSON.stringify(config));
   closeSettings();showToast('✅ Guardado');setStatus('listo');
 }
