@@ -1153,28 +1153,50 @@ const server = http.createServer(async (req, res) => {
 
       const lastMsg = body.messages[body.messages.length - 1]?.content || '';
 
-      const emailIntent = detectEmailIntent(lastMsg);
-      if (emailIntent) {
-        const gmailUrl = emailIntent.account === 'ong' ? body.n8nGmailOngUrl : emailIntent.account === 'trabajo' ? body.n8nGmailTrabajoUrl : body.n8nGmailPersonalUrl;
+      // Llamada directa a n8n como agente principal
+      if (body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl) {
 
-        if (gmailUrl) {
-          try {
-            const n8nResult = await callN8n(gmailUrl, emailIntent);
-            if (n8nResult.result) {
-              const formattedResult = await callClaude(body.claudeKey, {
-                model: body.model || 'claude-haiku-4-5-20251001',
-                max_tokens: 1024,
-                system: (body.systemPrompt || '') + '\n\nSe te proporciona informacion de Gmail. La cuenta es: ' + emailIntent.account + '. Los emails que ves son EXCLUSIVAMENTE de esa cuenta. NO mezcles con otras cuentas. Presenta la informacion de forma natural en espanol, ordenada por fecha. El [1] es el mas reciente. Nunca digas que no tienes acceso si tienes datos.',
-                messages: [
-                  ...body.messages.slice(-10),
-                  { role: 'user', content: 'Peticion del usuario: ' + lastMsg + '\n\nDatos de Gmail recibidos:\n' + JSON.stringify(n8nResult).substring(0, 4000) }
-                ]
-              });
-              return sendJSON(res, 200, formattedResult);
-            }
-          } catch (e) {
-            console.log('Gmail N8n error:', e.message);
+        const webhookUrl =
+          body.n8nGmailPersonalUrl ||
+          body.n8nGmailTrabajoUrl ||
+          body.n8nGmailOngUrl;
+
+        try {
+          const n8nResult = await callN8n(webhookUrl, {
+            text: lastMsg,
+            autoSend: true
+          });
+
+          if (n8nResult) {
+
+            // IA solo formatea bonito
+            const formatted = await callClaude(body.claudeKey, {
+              model: body.model || 'claude-haiku-4-5-20251001',
+              max_tokens: 1000,
+              system: body.systemPrompt + `
+      Eres un asistente que explica resultados de acciones.
+
+      IMPORTANTE:
+      - Si se han ejecutado acciones → dilo claro
+      - Si se han eliminado emails → indica cantidad
+      - Si se han archivado → indica cantidad
+      - Sé directo, claro y útil
+`,
+             messages: [
+                {
+                  role: "user",
+                  content:
+                    "Petición: " + lastMsg +
+                    "\n\nResultado:\n" + JSON.stringify(n8nResult).substring(0, 4000)
+                }
+              ]
+            });
+
+            return sendJSON(res, 200, formatted);
           }
+
+        } catch (e) {
+          console.log('N8N error:', e.message);
         }
       }
 
