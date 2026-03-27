@@ -468,6 +468,7 @@ textarea::placeholder{color:var(--text3);}
     <div class="field"><label>N8n — Gmail Personal</label><input type="text" id="n8nGmailPersonalUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/..." autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>N8n — Gmail ONG</label><input type="text" id="n8nGmailOngUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/gmail-manager" autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>N8n — Google Calendar</label><input type="text" id="n8nCalendarUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/calendar" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n — Gmail Trabajo</label><input type="text" id="n8nGmailTrabajoUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/2a25acc6-56d8-4cf5-ad21-7628b4e6360a" autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>N8n API Key</label><input type="password" id="n8nApiKey" placeholder="tu-api-key-de-n8n" autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>N8n Base URL</label><input type="text" id="n8nBaseUrl" placeholder="https://n8n-production-893e.up.railway.app" autocomplete="off" spellcheck="false"></div>
     <button class="btn-save" onclick="saveSettings()">✅ Guardar</button>
@@ -487,6 +488,7 @@ let config={
   n8nGmailOngUrl:'',
   n8nCalendarUrl:'',
   n8nCreatorUrl:'https://n8n-production-893e.up.railway.app/webhook/agente-creador',
+  n8nGmailTrabajoUrl:'',
   n8nApiKey:'',
   n8nBaseUrl:'https://n8n-production-893e.up.railway.app'
 };
@@ -523,6 +525,7 @@ function loadConfig(){
     document.getElementById('n8nGmailPersonalUrl').value=config.n8nGmailPersonalUrl||'';
     document.getElementById('n8nGmailOngUrl').value=config.n8nGmailOngUrl||'';
     document.getElementById('n8nCalendarUrl').value=config.n8nCalendarUrl||'';
+    document.getElementById('n8nGmailTrabajoUrl').value=config.n8nGmailTrabajoUrl||'';
     document.getElementById('n8nApiKey').value=config.n8nApiKey||'';
     document.getElementById('n8nBaseUrl').value=config.n8nBaseUrl||'https://n8n-production-893e.up.railway.app';
   }catch(e){}
@@ -581,6 +584,7 @@ function saveSettings(){
   config.n8nGmailPersonalUrl=document.getElementById('n8nGmailPersonalUrl').value.trim();
   config.n8nGmailOngUrl=document.getElementById('n8nGmailOngUrl').value.trim();
   config.n8nCalendarUrl=document.getElementById('n8nCalendarUrl').value.trim();
+  config.n8nGmailTrabajoUrl=document.getElementById('n8nGmailTrabajoUrl').value.trim();
   config.n8nApiKey=document.getElementById('n8nApiKey').value.trim();
   config.n8nBaseUrl=document.getElementById('n8nBaseUrl').value.trim()||'https://n8n-production-893e.up.railway.app';
   localStorage.setItem('asistente_config',JSON.stringify(config));
@@ -860,6 +864,7 @@ async function processMessage(userText){
         n8nGmailPersonalUrl:config.n8nGmailPersonalUrl||'',
         n8nGmailOngUrl:config.n8nGmailOngUrl||'',
         n8nCalendarUrl:config.n8nCalendarUrl||'',
+        n8nGmailTrabajoUrl:config.n8nGmailTrabajoUrl||'',
         n8nCreatorUrl:config.n8nCreatorUrl||'',
         n8nApiKey:config.n8nApiKey||'',
         n8nBaseUrl:config.n8nBaseUrl||''
@@ -988,7 +993,8 @@ function callN8n(webhookUrl, data) {
 function detectEmailIntent(text = '') {
   const t = text.toLowerCase();
   const isOng = /ong|proyecto arena|arena educacion|asociacion/.test(t);
-  const account = isOng ? 'ong' : 'personal';
+  const isTrabajo = /trabajo|colegio|azaraque|instituto/.test(t);
+  const account = isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal';
 
   if (/lee|leer|revisar|revisa|tengo.*email|correo.*nuevo|bandeja|no le[ií]dos/.test(t)) {
     return { action: 'leer', account };
@@ -1135,7 +1141,7 @@ const server = http.createServer(async (req, res) => {
 
       const emailIntent = detectEmailIntent(lastMsg);
       if (emailIntent) {
-        const gmailUrl = emailIntent.account === 'ong' ? body.n8nGmailOngUrl : body.n8nGmailPersonalUrl;
+        const gmailUrl = emailIntent.account === 'ong' ? body.n8nGmailOngUrl : emailIntent.account === 'trabajo' ? body.n8nGmailTrabajoUrl : body.n8nGmailPersonalUrl;
 
         if (gmailUrl) {
           try {
