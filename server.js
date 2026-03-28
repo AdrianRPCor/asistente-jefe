@@ -308,7 +308,9 @@ function callN8n(webhookUrl, data) {
       res.on('data', c => (b += c));
       res.on('end', () => {
         try {
-          const parsed = JSON.parse(b);
+          // Sanitizar la respuesta de n8n antes de parsear — puede contener surrogates
+          const clean = b.replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+          const parsed = JSON.parse(clean);
           if (res.statusCode >= 400) return reject(new Error(parsed?.message || `n8n error ${res.statusCode}`));
           resolve(parsed);
         } catch (e) {
