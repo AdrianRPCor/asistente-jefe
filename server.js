@@ -950,6 +950,12 @@ const server = http.createServer(async (req, res) => {
 
       if (hasGmailUrls && (emailIntent || (isConfirmation && pendingAction))) {
         const account = emailIntent?.account || 'personal';
+        // Sanitizar historial completo por si hay surrogates en mensajes guardados
+        const safeMessages = (body.messages || []).map(m => ({
+          role: m.role,
+          content: sanitize(m.content)
+        }));
+        const safeLastMsg = safeMessages.length ? safeMessages[safeMessages.length - 1].content : '';
         let webhookUrl;
         if (account === 'ong' && body.n8nGmailOngUrl)           webhookUrl = body.n8nGmailOngUrl;
         else if (account === 'trabajo' && body.n8nGmailTrabajoUrl) webhookUrl = body.n8nGmailTrabajoUrl;
@@ -959,7 +965,7 @@ const server = http.createServer(async (req, res) => {
         if (isConfirmation && pendingAction) {
           n8nPayload = { text: sanitize(`confirma ${pendingAction}`), confirmed: true, query: sanitize(pendingQuery || ''), autoSend: false };
         } else {
-          n8nPayload = { text: sanitize(lastMsg), autoSend: false, account };
+          n8nPayload = { text: safeLastMsg || sanitize(lastMsg), autoSend: false, account };
         }
 
         try {
@@ -980,7 +986,7 @@ Reglas:
 - Sé directo y conciso. Sin florituras.`,
               messages: [{
                 role: 'user',
-                content: 'Petición del usuario: ' + lastMsg + '\n\nResultado de n8n:\n' + JSON.stringify(n8nResult).substring(0, 4000)
+                content: 'Petición del usuario: ' + safeLastMsg + '\n\nResultado de n8n:\n' + JSON.stringify(n8nResult).substring(0, 4000)
               }]
             });
             const finalResponse = JSON.parse(JSON.stringify(formatted));
