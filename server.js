@@ -554,7 +554,7 @@ let config={
 };
 let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,
     currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false,
-    audioCtx=null,userProfile='{}',pendingConfirmAction=null,pendingConfirmQuery=null;
+    audioCtx=null,userProfile='{}',pendingConfirmAction=null,pendingConfirmQuery=null,pendingConfirmEmailId=null;
 
 function unlockAudio(){
   if(audioCtx)return;
@@ -817,7 +817,8 @@ async function processMessage(userText){
         n8nApiKey:config.n8nApiKey||'',
         n8nBaseUrl:config.n8nBaseUrl||'',
         pendingAction:pendingConfirmAction||null,
-        pendingQuery:pendingConfirmQuery||null
+        pendingQuery:pendingConfirmQuery||null,
+        pendingEmailId:pendingConfirmEmailId||null
       })
     });
     const data=await res.json();
@@ -827,6 +828,7 @@ async function processMessage(userText){
       await saveMessage('assistant',reply);
       pendingConfirmAction=data._pendingAction||null;
       pendingConfirmQuery=data._pendingQuery||null;
+      pendingConfirmEmailId=data._pendingEmailId||null;
       if(messages.length%5===0)updateProfileBackground();
       const shouldSpeak=config.alwaysSpeak==='voice'||(config.alwaysSpeak==='match'&&lastInputWasVoice);
       if(shouldSpeak&&config.openaiKey){setStatus('generando voz...');const ab=await getTTS(reply);addAIMessage(reply,ab);}
@@ -965,7 +967,7 @@ const server = http.createServer(async (req, res) => {
 
         let n8nPayload;
         if (isConfirmation && pendingAction) {
-          n8nPayload = { text: sanitize(`confirma ${pendingAction}`), confirmed: true, query: sanitize(pendingQuery || ''), autoSend: false };
+          n8nPayload = { text: sanitize(`confirma ${pendingAction}`), confirmed: true, query: sanitize(pendingQuery || ''), emailId: body.pendingEmailId || null, autoSend: false };
         } else {
           n8nPayload = { text: safeLastMsg || sanitize(lastMsg), autoSend: false, account };
         }
@@ -993,8 +995,9 @@ Reglas:
             });
             const finalResponse = JSON.parse(JSON.stringify(formatted));
             if (n8nResult.needsConfirmation) {
-              finalResponse._pendingAction = n8nResult.pendingAction || null;
-              finalResponse._pendingQuery  = n8nResult.pendingQuery  || null;
+              finalResponse._pendingAction  = n8nResult.pendingAction  || null;
+              finalResponse._pendingQuery   = n8nResult.pendingQuery   || null;
+              finalResponse._pendingEmailId = n8nResult.pendingEmailId || null;
             }
             return sendJSON(res, 200, finalResponse);
           }
