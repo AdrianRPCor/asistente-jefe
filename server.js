@@ -310,8 +310,14 @@ function callN8n(webhookUrl, data) {
         try {
           // Sanitizar la respuesta de n8n antes de parsear — puede contener surrogates
           const clean = b.replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
-          const parsed = JSON.parse(clean);
+          let parsed = JSON.parse(clean);
           if (res.statusCode >= 400) return reject(new Error(parsed?.message || `n8n error ${res.statusCode}`));
+          // Normalizar respuesta de n8n: puede venir como array [{json:{...}}] o como objeto directo
+          if (Array.isArray(parsed)) {
+            // n8n devuelve array de items — extraer el primer item
+            const first = parsed[0];
+            parsed = (first && first.json) ? first.json : first;
+          }
           resolve(parsed);
         } catch (e) {
           if (res.statusCode >= 400) return reject(new Error(`n8n error ${res.statusCode}`));
