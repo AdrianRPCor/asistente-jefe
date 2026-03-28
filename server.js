@@ -462,10 +462,10 @@ textarea::placeholder{color:var(--text3);}
     <div class="field"><label>API Key de Anthropic (Claude)</label><input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>API Key de OpenAI (voz)</label><input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>Sobre ti (contexto base)</label><textarea id="systemPrompt" rows="4" style="resize:none">Eres mi asistente personal inteligente. Me llamo Adrián. Soy profesor, tengo una ONG y trabajo como SEO freelance. Eres directo, práctico, proactivo. Siempre en español. Cuando no puedas hacer algo, dime qué necesitarías.</textarea></div>
-    <div class="field"><label>Velocidad de respuesta</label><select id="modelSelect"><option value="claude-haiku-4-5-20251001">Rápido (Haiku) — recomendado para voz</option><option value="claude-sonnet-4-5-20250929">Inteligente (Sonnet)</option></select></div>
+    <div class="field"><label>Velocidad de respuesta</label><select id="modelSelect"><option value="claude-haiku-4-5-20251001">Rápido (Haiku) — recomendado para voz</option><option value="claude-sonnet-4-6">Inteligente (Sonnet)</option></select></div>
     <div class="field"><label>Voz</label><select id="voiceSelect"><option value="nova">Nova — clara (recomendada)</option><option value="alloy">Alloy — neutra</option><option value="echo">Echo — masculina</option><option value="fable">Fable — expresiva</option><option value="onyx">Onyx — grave</option><option value="shimmer">Shimmer — suave</option></select></div>
     <div class="field"><label>Responder por voz</label><select id="alwaysSpeak"><option value="match">Solo si yo hablo</option><option value="voice">Siempre</option><option value="never">Nunca</option></select></div>
-    <div class="field"><label>N8n — Gmail Personal</label><input type="text" id="n8nGmailPersonalUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/..." autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n — Gmail Personal</label><input type="text" id="n8nGmailPersonalUrl" placeholder="https://TU-N8N.up.railway.app/webhook/86651dd0-dec6-4828-afbe-561d76c3ea16-pro" autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>N8n — Gmail ONG</label><input type="text" id="n8nGmailOngUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/gmail-manager" autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>N8n — Google Calendar</label><input type="text" id="n8nCalendarUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/calendar" autocomplete="off" spellcheck="false"></div>
     <div class="field"><label>N8n — Gmail Trabajo</label><input type="text" id="n8nGmailTrabajoUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/2a25acc6-56d8-4cf5-ad21-7628b4e6360a" autocomplete="off" spellcheck="false"></div>
@@ -493,7 +493,7 @@ let config={
   n8nBaseUrl:'https://n8n-production-893e.up.railway.app'
 };
 
-let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false,audioCtx=null,userProfile='{}';
+let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false,audioCtx=null,userProfile='{}',pendingConfirmAction=null,pendingConfirmQuery=null;
 
 function unlockAudio(){
   if(audioCtx)return;
@@ -540,7 +540,7 @@ async function loadProfileAndHistory(){
     const pd=await pr.json();
     if(pd.profile)userProfile=pd.profile;
 
-    const hr=await Promise.race([fetch('/api/history?limit=6'), mkTimeout()]);
+    const hr=await Promise.race([fetch('/api/history?limit=50'), mkTimeout()]);
     const hd=await hr.json();
 
     if(hd.messages&&hd.messages.length>0){
@@ -867,7 +867,9 @@ async function processMessage(userText){
         n8nGmailTrabajoUrl:config.n8nGmailTrabajoUrl||'',
         n8nCreatorUrl:config.n8nCreatorUrl||'',
         n8nApiKey:config.n8nApiKey||'',
-        n8nBaseUrl:config.n8nBaseUrl||''
+        n8nBaseUrl:config.n8nBaseUrl||'',
+        pendingAction:pendingConfirmAction||null,
+        pendingQuery:pendingConfirmQuery||null
       })
     });
 
@@ -877,6 +879,9 @@ async function processMessage(userText){
       const reply=data.content[0].text;
       messages.push({role:'assistant',content:reply});
       await saveMessage('assistant',reply);
+      // Trackear confirmaciones pendientes de lote
+      pendingConfirmAction=data._pendingAction||null;
+      pendingConfirmQuery=data._pendingQuery||null;
 
       if(messages.length%5===0)updateProfileBackground();
 
@@ -1153,50 +1158,87 @@ const server = http.createServer(async (req, res) => {
 
       const lastMsg = body.messages[body.messages.length - 1]?.content || '';
 
-      // Llamada directa a n8n como agente principal
-      if (body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl) {
+      // ── GMAIL / N8N ──────────────────────────────────────────────
+      // Detectar intención de email ANTES de llamar a n8n
+      const emailIntent = detectEmailIntent(lastMsg);
 
-        const webhookUrl =
-          body.n8nGmailPersonalUrl ||
-          body.n8nGmailTrabajoUrl ||
-          body.n8nGmailOngUrl;
+      // Detectar si el usuario está confirmando una acción pendiente de lote
+      const isConfirmation = /^(s[ií],?\s*(confirma|procede|ejecuta|hazlo|dale|adelante)|confirma\s+\w+_lote|s[ií]\s*$)/i.test(lastMsg.trim());
+      const pendingAction = body.pendingAction || null;   // el frontend lo reenvía si hay confirmación pendiente
+      const pendingQuery  = body.pendingQuery  || null;
+
+      const hasGmailUrls = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
+
+      if (hasGmailUrls && (emailIntent || (isConfirmation && pendingAction))) {
+
+        // Seleccionar webhook según cuenta detectada
+        const account = emailIntent?.account || 'personal';
+        let webhookUrl;
+        if (account === 'ong' && body.n8nGmailOngUrl) {
+          webhookUrl = body.n8nGmailOngUrl;
+        } else if (account === 'trabajo' && body.n8nGmailTrabajoUrl) {
+          webhookUrl = body.n8nGmailTrabajoUrl;
+        } else {
+          webhookUrl = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
+        }
+
+        // Construir payload para n8n
+        let n8nPayload;
+        if (isConfirmation && pendingAction) {
+          // Confirmación de acción destructiva pendiente
+          n8nPayload = {
+            text: `confirma ${pendingAction}`,
+            confirmed: true,
+            query: pendingQuery || '',
+            autoSend: false
+          };
+        } else {
+          // Petición normal — autoSend false para que redactar/responder pida confirmación
+          n8nPayload = {
+            text: lastMsg,
+            autoSend: false,
+            account
+          };
+        }
 
         try {
-          const n8nResult = await callN8n(webhookUrl, {
-            text: lastMsg,
-            autoSend: true
-          });
+          const n8nResult = await callN8n(webhookUrl, n8nPayload);
 
           if (n8nResult) {
-
-            // IA solo formatea bonito
+            // IA formatea el resultado de forma natural
             const formatted = await callClaude(body.claudeKey, {
               model: body.model || 'claude-haiku-4-5-20251001',
-              max_tokens: 1000,
+              max_tokens: 1200,
               system: body.systemPrompt + `
-      Eres un asistente que explica resultados de acciones.
 
-      IMPORTANTE:
-      - Si se han ejecutado acciones → dilo claro
-      - Si se han eliminado emails → indica cantidad
-      - Si se han archivado → indica cantidad
-      - Sé directo, claro y útil
-`,
-             messages: [
+Eres un asistente que presenta resultados de acciones sobre el email.
+Reglas:
+- Si hay emails → preséntalo limpio, legible, en español
+- Si hay una previsualización (preview) con needsConfirmation:true → muéstrala tal cual y pide confirmación al usuario
+- Si se ejecutó una acción → confirma qué se hizo y cuántos emails se afectaron
+- Si hay un borrador de email → muéstralo y pregunta si quiere que lo envíe
+- Sé directo y conciso. Sin florituras.`,
+              messages: [
                 {
-                  role: "user",
-                  content:
-                    "Petición: " + lastMsg +
-                    "\n\nResultado:\n" + JSON.stringify(n8nResult).substring(0, 4000)
+                  role: 'user',
+                  content: 'Petición del usuario: ' + lastMsg +
+                           '\n\nResultado de n8n:\n' + JSON.stringify(n8nResult).substring(0, 4000)
                 }
               ]
             });
 
-            return sendJSON(res, 200, formatted);
-          }
+            // Adjuntar metadatos de confirmación pendiente para el frontend
+            const finalResponse = JSON.parse(JSON.stringify(formatted));
+            if (n8nResult.needsConfirmation) {
+              finalResponse._pendingAction = n8nResult.pendingAction || null;
+              finalResponse._pendingQuery  = n8nResult.pendingQuery  || null;
+            }
 
+            return sendJSON(res, 200, finalResponse);
+          }
         } catch (e) {
-          console.log('N8N error:', e.message);
+          console.log('N8N Gmail error:', e.message);
+          // Fallthrough a Claude directo si n8n falla
         }
       }
 
