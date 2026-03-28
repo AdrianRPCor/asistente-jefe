@@ -972,7 +972,7 @@ const server = http.createServer(async (req, res) => {
       const sanitize = (s) => String(s || '').replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').substring(0, 2000);
 
       const emailIntent = detectEmailIntent(lastMsg);
-      const sessionId = body.sessionId || SESSION_ID || 'default';
+      const sessionId = body.sessionId || 'default';
       const serverSession = pendingSessions.get(sessionId) || {};
       
       // Leer pending del servidor (más fiable que el frontend)
