@@ -964,7 +964,15 @@ const server = http.createServer(async (req, res) => {
         hasGmailUrls: !!hasGmailUrls
       }));
 
-      if (hasGmailUrls && (emailIntent || (isConfirmation && pendingAction))) {
+      // Si hay confirmación explícita con pendingAction, usarla
+      // Si no hay pendingAction pero hay emailIntent de eliminar/archivar + isConfirmation, también proceder
+      const shouldCallN8n = hasGmailUrls && (
+        emailIntent ||
+        (isConfirmation && pendingAction) ||
+        (isConfirmation && (emailIntent?.action || '').match(/eliminar|archivar|marcar|mover|spam/))
+      );
+
+      if (shouldCallN8n) {
         const account = emailIntent?.account || 'personal';
         // Sanitizar historial completo por si hay surrogates en mensajes guardados
         const safeMessages = (body.messages || []).map(m => ({
@@ -1006,11 +1014,12 @@ Reglas:
               }]
             });
             const finalResponse = JSON.parse(JSON.stringify(formatted));
-            if (n8nResult.needsConfirmation) {
-              finalResponse._pendingAction  = n8nResult.pendingAction  || null;
-              finalResponse._pendingQuery   = n8nResult.pendingQuery   || null;
-              finalResponse._pendingEmailId = n8nResult.pendingEmailId || null;
-            }
+            // Adjuntar siempre — el frontend necesita saber si hay confirmación pendiente
+            const hasPending = n8nResult.needsConfirmation === true;
+            finalResponse._pendingAction  = hasPending ? (n8nResult.pendingAction  || n8nResult.action  || null) : null;
+            finalResponse._pendingQuery   = hasPending ? (n8nResult.pendingQuery   || n8nResult.query   || null) : null;
+            finalResponse._pendingEmailId = hasPending ? (n8nResult.pendingEmailId || n8nResult.emailId || null) : null;
+            console.log('N8N pending:', {hasPending, action: finalResponse._pendingAction, emailId: finalResponse._pendingEmailId});
             return sendJSON(res, 200, finalResponse);
           }
         } catch (e) {
