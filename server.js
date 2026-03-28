@@ -286,6 +286,9 @@ async function summarizeOldConversations(apiKey, messages) {
   }
 }
 
+// Sesión en memoria del servidor — guarda confirmaciones pendientes por sesión
+const pendingSessions = new Map();
+
 function callN8n(webhookUrl, data) {
   return new Promise((resolve, reject) => {
     if (!webhookUrl) return reject(new Error('Falta webhookUrl'));
@@ -825,7 +828,8 @@ async function processMessage(userText){
         n8nBaseUrl:config.n8nBaseUrl||'',
         pendingAction:pendingConfirmAction||null,
         pendingQuery:pendingConfirmQuery||null,
-        pendingEmailId:pendingConfirmEmailId||null
+        pendingEmailId:pendingConfirmEmailId||null,
+        sessionId:SESSION_ID
       })
     });
     const data=await res.json();
@@ -956,9 +960,12 @@ const server = http.createServer(async (req, res) => {
       const emailIntent = detectEmailIntent(lastMsg);
       const isConfirmation = /^(s[ií]|yes|confirma|procede|ejecuta|hazlo|dale|adelante|ok|correcto|venga|adelante)/i.test(lastMsg.trim()) 
         || /confirma|procede|ejecuta|borra|elimina|hazlo/i.test(lastMsg.trim());
-      const pendingAction = body.pendingAction || null;
-      const pendingQuery  = body.pendingQuery  || null;
-      const pendingEmailId = body.pendingEmailId || null;
+      // Leer pendingAction del servidor (más fiable que el frontend)
+      const sessionId = body.sessionId || 'default';
+      const serverSession = pendingSessions.get(sessionId) || {};
+      const pendingAction  = body.pendingAction  || serverSession.pendingAction  || null;
+      const pendingQuery   = body.pendingQuery   || serverSession.pendingQuery   || null;
+      const pendingEmailId = body.pendingEmailId || serverSession.pendingEmailId || null;
       const hasGmailUrls  = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
       
       // DEBUG — ver qué llega
@@ -1031,11 +1038,22 @@ Reglas:
             // Adjuntar metadatos DESPUÉS de Claude — Claude no los modifica
             const finalResponse = JSON.parse(JSON.stringify(formatted));
             if (hasPending) {
-              finalResponse._pendingAction  = pendingAction;
-              finalResponse._pendingQuery   = pendingQuery;
-              finalResponse._pendingEmailId = pendingEmailId;
+              finalResponse._pendingAction  = n8nResult.pendingAction  || null;
+              finalResponse._pendingQuery   = n8nResult.pendingQuery   || null;
+              finalResponse._pendingEmailId = n8nResult.pendingEmailId || null;
+              // Guardar en sesión del servidor — no depender del frontend
+              pendingSessions.set(sessionId, {
+                pendingAction:  n8nResult.pendingAction  || null,
+                pendingQuery:   n8nResult.pendingQuery   || null,
+                pendingEmailId: n8nResult.pendingEmailId || null
+              });
+              // Limpiar después de 5 minutos
+              setTimeout(() => pendingSessions.delete(sessionId), 5 * 60 * 1000);
+            } else {
+              // Acción completada — limpiar sesión
+              pendingSessions.delete(sessionId);
             }
-            console.log('Sent to frontend:', {hasPending, pendingAction, pendingEmailId});
+            console.log('Sent to frontend:', {hasPending, pendingAction: n8nResult.pendingAction, pendingEmailId: n8nResult.pendingEmailId});
             return sendJSON(res, 200, finalResponse);
           }
         } catch (e) {
