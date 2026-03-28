@@ -939,6 +939,9 @@ const server = http.createServer(async (req, res) => {
       const lastMsg = body.messages[body.messages.length - 1]?.content || '';
 
       // ── Gmail / N8N ───────────────────────────────────────────────────────
+      // Sanitizar cualquier string antes de mandarlo a n8n
+      const sanitize = (s) => String(s || '').replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').substring(0, 2000);
+
       const emailIntent = detectEmailIntent(lastMsg);
       const isConfirmation = /^(s[ií],?\s*(confirma|procede|ejecuta|hazlo|dale|adelante)|confirma\s+\w+_lote|s[ií]\s*$)/i.test(lastMsg.trim());
       const pendingAction = body.pendingAction || null;
@@ -952,9 +955,6 @@ const server = http.createServer(async (req, res) => {
         else if (account === 'trabajo' && body.n8nGmailTrabajoUrl) webhookUrl = body.n8nGmailTrabajoUrl;
         else webhookUrl = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
 
-        // Sanitizar texto — eliminar surrogate pairs inválidos que rompen JSON
-        const sanitize = (s) => String(s || '').replace(/[\uD800-\uDFFF]/g, '').substring(0, 2000);
-
         let n8nPayload;
         if (isConfirmation && pendingAction) {
           n8nPayload = { text: sanitize(`confirma ${pendingAction}`), confirmed: true, query: sanitize(pendingQuery || ''), autoSend: false };
@@ -965,10 +965,11 @@ const server = http.createServer(async (req, res) => {
         try {
           const n8nResult = await callN8n(webhookUrl, n8nPayload);
           if (n8nResult) {
+            const safeSystem = sanitize(body.systemPrompt || '');
             const formatted = await callClaude(body.claudeKey, {
               model: body.model || 'claude-haiku-4-5-20251001',
               max_tokens: 1200,
-              system: body.systemPrompt + `
+              system: safeSystem + `
 
 Eres un asistente que presenta resultados de acciones sobre el email.
 Reglas:
