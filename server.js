@@ -1001,6 +1001,14 @@ const server = http.createServer(async (req, res) => {
         try {
           const n8nResult = await callN8n(webhookUrl, n8nPayload);
           if (n8nResult) {
+            // CRÍTICO: leer needsConfirmation ANTES de pasar a Claude
+            // Claude reformatea el texto y pierde estos campos
+            const hasPending = n8nResult.needsConfirmation === true;
+            const pendingAction  = n8nResult.pendingAction  || (hasPending ? n8nResult.action  : null) || null;
+            const pendingQuery   = n8nResult.pendingQuery   || (hasPending ? n8nResult.query   : null) || null;
+            const pendingEmailId = n8nResult.pendingEmailId || (hasPending ? n8nResult.emailId : null) || null;
+            console.log('N8N raw:', JSON.stringify({needsConfirmation: n8nResult.needsConfirmation, hasPending, pendingAction, pendingEmailId}));
+
             const safeSystem = sanitize(body.systemPrompt || '');
             const formatted = await callClaude(body.claudeKey, {
               model: body.model || 'claude-haiku-4-5-20251001',
@@ -1010,7 +1018,7 @@ const server = http.createServer(async (req, res) => {
 Eres un asistente que presenta resultados de acciones sobre el email.
 Reglas:
 - Si hay emails → preséntalo limpio, legible, en español. Muestra remitente, asunto y fecha de cada uno.
-- Si hay una previsualización (preview) con needsConfirmation:true → muéstrala tal cual y pide confirmación
+- Si hay una previsualización (preview) con needsConfirmation:true → muéstrala EXACTAMENTE tal cual y pide confirmación con "sí, confirma"
 - Si se ejecutó una acción → confirma qué se hizo y cuántos emails se afectaron
 - Si hay un borrador → muéstralo y pregunta si quiere que lo envíe
 - Sé directo y conciso. Sin florituras.`,
@@ -1019,13 +1027,14 @@ Reglas:
                 content: 'Petición del usuario: ' + safeLastMsg + '\n\nResultado de n8n:\n' + JSON.stringify(n8nResult).substring(0, 4000)
               }]
             });
+            // Adjuntar metadatos DESPUÉS de Claude — Claude no los modifica
             const finalResponse = JSON.parse(JSON.stringify(formatted));
-            // Adjuntar siempre — el frontend necesita saber si hay confirmación pendiente
-            const hasPending = n8nResult.needsConfirmation === true;
-            finalResponse._pendingAction  = hasPending ? (n8nResult.pendingAction  || n8nResult.action  || null) : null;
-            finalResponse._pendingQuery   = hasPending ? (n8nResult.pendingQuery   || n8nResult.query   || null) : null;
-            finalResponse._pendingEmailId = hasPending ? (n8nResult.pendingEmailId || n8nResult.emailId || null) : null;
-            console.log('N8N pending:', {hasPending, action: finalResponse._pendingAction, emailId: finalResponse._pendingEmailId});
+            if (hasPending) {
+              finalResponse._pendingAction  = pendingAction;
+              finalResponse._pendingQuery   = pendingQuery;
+              finalResponse._pendingEmailId = pendingEmailId;
+            }
+            console.log('Sent to frontend:', {hasPending, pendingAction, pendingEmailId});
             return sendJSON(res, 200, finalResponse);
           }
         } catch (e) {
