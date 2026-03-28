@@ -947,7 +947,8 @@ const server = http.createServer(async (req, res) => {
       const sanitize = (s) => String(s || '').replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').substring(0, 2000);
 
       const emailIntent = detectEmailIntent(lastMsg);
-      const isConfirmation = /^(s[ií],?\s*(confirma|procede|ejecuta|hazlo|dale|adelante)|confirma\s+\w+_lote|s[ií]\s*$)/i.test(lastMsg.trim());
+      const isConfirmation = /^(s[ií]|yes|confirma|procede|ejecuta|hazlo|dale|adelante|ok|correcto|venga|adelante)/i.test(lastMsg.trim()) 
+        || /confirma|procede|ejecuta|borra|elimina|hazlo/i.test(lastMsg.trim());
       const pendingAction = body.pendingAction || null;
       const pendingQuery  = body.pendingQuery  || null;
       const hasGmailUrls  = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
