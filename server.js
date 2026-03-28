@@ -344,15 +344,12 @@ function detectEmailIntent(text = '') {
   const esEmail = /email|correo|mail|bandeja|inbox|mensaje.*recib|recib.*mensaje/.test(t);
 
   // Acciones
-  if (/lee|leer|revisar|revisa|mira|muestra|dame|dime|cu[aá]ntos|tengo.*email|tengo.*correo|correo.*nuevo|email.*nuevo|no le[íi]dos|[uú]ltimo.*correo|[uú]ltimo.*email|recientes|nuevos/.test(t)
-      || (esEmail && /qu[eé]|cu[aá]l|hay|tengo|ver|revisa|dame|dime|mira|muestra/.test(t))) {
-    return { action: 'leer', account };
+  // CRÍTICO: eliminar/archivar ANTES que leer para evitar falsos positivos
+  if (/elimina|eliminar|borra|borrar|suprime|suprimir|purga|papelera|quita|quitar|deshazte|mueve.*papelera/.test(t)) {
+    return { action: 'eliminar', account };
   }
-  if (/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre|correo.*sobre|de parte de/.test(t)) {
-    return { action: 'buscar', query: text, account };
-  }
-  if (/prioriza|priorizar|importante|urgente|organiza.*correo|organizar.*email|orden.*importancia/.test(t)) {
-    return { action: 'priorizar', account };
+  if (/archiva|archivar/.test(t)) {
+    return { action: 'archivar', account };
   }
   if (/env[íi]a|enviar|manda|mandar.*email|escribe.*email|redacta|componer|crear.*email|nuevo.*email/.test(t)) {
     return { action: 'redactar', content: text, account };
@@ -360,11 +357,15 @@ function detectEmailIntent(text = '') {
   if (/responde|responder|contesta|contestar|reply/.test(t)) {
     return { action: 'responder', account };
   }
-  if (/elimina|eliminar|borra|borrar|suprime|suprimir|purga|papelera/.test(t)) {
-    return { action: 'eliminar', account };
+  if (/prioriza|priorizar|importante|urgente|organiza.*correo|organizar.*email|orden.*importancia/.test(t)) {
+    return { action: 'priorizar', account };
   }
-  if (/archiva|archivar/.test(t)) {
-    return { action: 'archivar', account };
+  if (/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre|correo.*sobre|de parte de/.test(t)) {
+    return { action: 'buscar', query: text, account };
+  }
+  if (/lee|leer|revisar|revisa|mira|muestra|dame|dime|cu[aá]ntos|tengo.*email|tengo.*correo|correo.*nuevo|email.*nuevo|no le[íi]dos|[uú]ltimo.*correo|[uú]ltimo.*email|recientes|nuevos/.test(t)
+      || (esEmail && /qu[eé]|cu[aá]l|hay|tengo|ver|revisa|dame|dime|mira|muestra/.test(t))) {
+    return { action: 'leer', account };
   }
   if (/marca.*le[íi]do|marcar.*le[íi]do|marca.*no le[íi]do/.test(t)) {
     return { action: 'marcar', markAs: /no le[íi]do/.test(t) ? 'noleido' : 'leido', account };
