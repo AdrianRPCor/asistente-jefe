@@ -952,11 +952,14 @@ const server = http.createServer(async (req, res) => {
         else if (account === 'trabajo' && body.n8nGmailTrabajoUrl) webhookUrl = body.n8nGmailTrabajoUrl;
         else webhookUrl = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
 
+        // Sanitizar texto — eliminar surrogate pairs inválidos que rompen JSON
+        const sanitize = (s) => String(s || '').replace(/[\uD800-\uDFFF]/g, '').substring(0, 2000);
+
         let n8nPayload;
         if (isConfirmation && pendingAction) {
-          n8nPayload = { text: `confirma ${pendingAction}`, confirmed: true, query: pendingQuery || '', autoSend: false };
+          n8nPayload = { text: sanitize(`confirma ${pendingAction}`), confirmed: true, query: sanitize(pendingQuery || ''), autoSend: false };
         } else {
-          n8nPayload = { text: lastMsg, autoSend: false, account };
+          n8nPayload = { text: sanitize(lastMsg), autoSend: false, account };
         }
 
         try {
