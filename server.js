@@ -289,6 +289,8 @@ async function summarizeOldConversations(apiKey, messages) {
 // Sesión en memoria del servidor — guarda confirmaciones pendientes por sesión
 const pendingSessions = new Map();
 
+// Sesión servidor para confirmaciones pendientes
+
 function callN8n(webhookUrl, data) {
   return new Promise((resolve, reject) => {
     if (!webhookUrl) return reject(new Error('Falta webhookUrl'));
@@ -337,6 +339,18 @@ function callN8n(webhookUrl, data) {
 // ── Detección de intención de email ──────────────────────────────────────────
 function detectEmailIntent(text = '') {
   const t = text.toLowerCase();
+  
+  // CRÍTICO: acciones destructivas/modificadoras primero
+  if (/\belimina\b|\bborra\b|\bquita\b|\bsuprime\b|\bborrar\b|\beliminar\b|\bpapelera\b/.test(t)) {
+    const isOng = /\bong\b|arena|asociaci[oó]n/.test(t);
+    const isTrabajo = /\btrabajo\b|colegio|azaraque|instituto/.test(t);
+    return { action: 'eliminar', account: isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal' };
+  }
+  if (/\barchiva\b|\barchivar\b/.test(t)) {
+    const isOng = /\bong\b|arena/.test(t);
+    const isTrabajo = /\btrabajo\b|colegio/.test(t);
+    return { action: 'archivar', account: isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal' };
+  }
 
   // Detectar cuenta
   const isOng     = /\bong\b|proyecto arena|arena educaci[oó]n|asociaci[oó]n/.test(t);
@@ -829,6 +843,7 @@ async function processMessage(userText){
         pendingAction:pendingConfirmAction||null,
         pendingQuery:pendingConfirmQuery||null,
         pendingEmailId:pendingConfirmEmailId||null,
+        sessionId:SESSION_ID,
         sessionId:SESSION_ID
       })
     });
@@ -954,21 +969,23 @@ const server = http.createServer(async (req, res) => {
       const lastMsg = body.messages[body.messages.length - 1]?.content || '';
 
       // ── Gmail / N8N ───────────────────────────────────────────────────────
-      // Sanitizar cualquier string antes de mandarlo a n8n
       const sanitize = (s) => String(s || '').replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').substring(0, 2000);
 
       const emailIntent = detectEmailIntent(lastMsg);
-      const isConfirmation = /^(s[ií]|yes|confirma|procede|ejecuta|hazlo|dale|adelante|ok|correcto|venga|adelante)/i.test(lastMsg.trim()) 
-        || /confirma|procede|ejecuta|borra|elimina|hazlo/i.test(lastMsg.trim());
-      // Leer pendingAction del servidor (más fiable que el frontend)
-      const sessionId = body.sessionId || 'default';
+      const sessionId = body.sessionId || SESSION_ID || 'default';
       const serverSession = pendingSessions.get(sessionId) || {};
+      
+      // Leer pending del servidor (más fiable que el frontend)
       const pendingAction  = body.pendingAction  || serverSession.pendingAction  || null;
       const pendingQuery   = body.pendingQuery   || serverSession.pendingQuery   || null;
       const pendingEmailId = body.pendingEmailId || serverSession.pendingEmailId || null;
-      const hasGmailUrls  = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
-      
-      // DEBUG — ver qué llega
+
+      // Detectar confirmación
+      const isConfirmation = /^(s[ií]|yes|ok|confirma|procede|dale|hazlo|adelante|venga)/i.test(lastMsg.trim())
+        || /confirma|procede|ejecuta/i.test(lastMsg.trim());
+
+      const hasGmailUrls = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
+
       console.log('DEBUG chat:', JSON.stringify({
         lastMsg: lastMsg.substring(0, 80),
         emailIntent: emailIntent ? emailIntent.action : null,
@@ -978,22 +995,8 @@ const server = http.createServer(async (req, res) => {
         hasGmailUrls: !!hasGmailUrls
       }));
 
-      // Si hay confirmación explícita con pendingAction, usarla
-      // Si no hay pendingAction pero hay emailIntent de eliminar/archivar + isConfirmation, también proceder
-      const shouldCallN8n = hasGmailUrls && (
-        emailIntent ||
-        (isConfirmation && pendingAction) ||
-        (isConfirmation && (emailIntent?.action || '').match(/eliminar|archivar|marcar|mover|spam/))
-      );
-
-      if (shouldCallN8n) {
-        const account = emailIntent?.account || 'personal';
-        // Sanitizar historial completo por si hay surrogates en mensajes guardados
-        const safeMessages = (body.messages || []).map(m => ({
-          role: m.role,
-          content: sanitize(m.content)
-        }));
-        const safeLastMsg = safeMessages.length ? safeMessages[safeMessages.length - 1].content : '';
+      if (hasGmailUrls && (emailIntent || (isConfirmation && pendingAction))) {
+        const account = emailIntent?.account || serverSession.account || 'personal';
         let webhookUrl;
         if (account === 'ong' && body.n8nGmailOngUrl)           webhookUrl = body.n8nGmailOngUrl;
         else if (account === 'trabajo' && body.n8nGmailTrabajoUrl) webhookUrl = body.n8nGmailTrabajoUrl;
@@ -1001,21 +1004,51 @@ const server = http.createServer(async (req, res) => {
 
         let n8nPayload;
         if (isConfirmation && pendingAction) {
-          n8nPayload = { text: sanitize(`confirma ${pendingAction}`), confirmed: true, query: sanitize(pendingQuery || ''), emailId: body.pendingEmailId || null, autoSend: false };
+          // Confirmación — mandar emailId guardado en sesión servidor
+          n8nPayload = {
+            text: sanitize(lastMsg),
+            confirmed: true,
+            emailId: pendingEmailId || '',
+            query: pendingQuery || '',
+            autoSend: false,
+            account
+          };
+          console.log('Sending confirmation to n8n:', { confirmed: true, emailId: pendingEmailId });
         } else {
-          n8nPayload = { text: safeLastMsg || sanitize(lastMsg), autoSend: false, account };
+          n8nPayload = {
+            text: sanitize(lastMsg),
+            autoSend: false,
+            account,
+            confirmed: false
+          };
         }
 
         try {
           const n8nResult = await callN8n(webhookUrl, n8nPayload);
           if (n8nResult) {
-            // CRÍTICO: leer needsConfirmation ANTES de pasar a Claude
-            // Claude reformatea el texto y pierde estos campos
+            // Leer needsConfirmation ANTES de pasar a Claude
             const hasPending = n8nResult.needsConfirmation === true;
-            const pendingAction  = n8nResult.pendingAction  || (hasPending ? n8nResult.action  : null) || null;
-            const pendingQuery   = n8nResult.pendingQuery   || (hasPending ? n8nResult.query   : null) || null;
-            const pendingEmailId = n8nResult.pendingEmailId || (hasPending ? n8nResult.emailId : null) || null;
-            console.log('N8N raw:', JSON.stringify({needsConfirmation: n8nResult.needsConfirmation, hasPending, pendingAction, pendingEmailId}));
+            
+            if (hasPending) {
+              // Guardar en sesión del servidor
+              pendingSessions.set(sessionId, {
+                pendingAction:  n8nResult.pendingAction  || 'eliminar_uno',
+                pendingQuery:   n8nResult.pendingQuery   || '',
+                pendingEmailId: n8nResult.pendingEmailId || '',
+                account
+              });
+              setTimeout(() => pendingSessions.delete(sessionId), 10 * 60 * 1000);
+              console.log('Saved pending session:', pendingSessions.get(sessionId));
+            } else if (isConfirmation) {
+              // Acción ejecutada — limpiar sesión
+              pendingSessions.delete(sessionId);
+            }
+
+            console.log('N8N raw:', JSON.stringify({
+              hasPending,
+              pendingAction: n8nResult.pendingAction,
+              pendingEmailId: n8nResult.pendingEmailId
+            }));
 
             const safeSystem = sanitize(body.systemPrompt || '');
             const formatted = await callClaude(body.claudeKey, {
@@ -1025,35 +1058,25 @@ const server = http.createServer(async (req, res) => {
 
 Eres un asistente que presenta resultados de acciones sobre el email.
 Reglas:
-- Si hay emails → preséntalo limpio, legible, en español. Muestra remitente, asunto y fecha de cada uno.
-- Si hay una previsualización (preview) con needsConfirmation:true → muéstrala EXACTAMENTE tal cual y pide confirmación con "sí, confirma"
-- Si se ejecutó una acción → confirma qué se hizo y cuántos emails se afectaron
-- Si hay un borrador → muéstralo y pregunta si quiere que lo envíe
-- Sé directo y conciso. Sin florituras.`,
+- Si hay emails → preséntalo limpio, legible, en español
+- Si needsConfirmation=true → muestra el preview y pide confirmación con "sí, confirma"
+- Si se ejecutó una acción → confirma qué se hizo
+- Si hay un borrador → muéstralo y pregunta si quiere enviarlo
+- Sé directo y conciso.`,
               messages: [{
                 role: 'user',
-                content: 'Petición del usuario: ' + safeLastMsg + '\n\nResultado de n8n:\n' + JSON.stringify(n8nResult).substring(0, 4000)
+                content: 'Petición: ' + sanitize(lastMsg) + '\n\nResultado:\n' + JSON.stringify(n8nResult).substring(0, 4000)
               }]
             });
-            // Adjuntar metadatos DESPUÉS de Claude — Claude no los modifica
+
             const finalResponse = JSON.parse(JSON.stringify(formatted));
             if (hasPending) {
-              finalResponse._pendingAction  = n8nResult.pendingAction  || null;
-              finalResponse._pendingQuery   = n8nResult.pendingQuery   || null;
-              finalResponse._pendingEmailId = n8nResult.pendingEmailId || null;
-              // Guardar en sesión del servidor — no depender del frontend
-              pendingSessions.set(sessionId, {
-                pendingAction:  n8nResult.pendingAction  || null,
-                pendingQuery:   n8nResult.pendingQuery   || null,
-                pendingEmailId: n8nResult.pendingEmailId || null
-              });
-              // Limpiar después de 5 minutos
-              setTimeout(() => pendingSessions.delete(sessionId), 5 * 60 * 1000);
-            } else {
-              // Acción completada — limpiar sesión
-              pendingSessions.delete(sessionId);
+              finalResponse._pendingAction  = n8nResult.pendingAction  || 'eliminar_uno';
+              finalResponse._pendingQuery   = n8nResult.pendingQuery   || '';
+              finalResponse._pendingEmailId = n8nResult.pendingEmailId || '';
             }
-            console.log('Sent to frontend:', {hasPending, pendingAction: n8nResult.pendingAction, pendingEmailId: n8nResult.pendingEmailId});
+
+            console.log('Sent to frontend:', { hasPending, pendingEmailId: finalResponse._pendingEmailId });
             return sendJSON(res, 200, finalResponse);
           }
         } catch (e) {
