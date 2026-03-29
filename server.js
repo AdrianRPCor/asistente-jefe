@@ -15,6 +15,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+// ── Base de datos ─────────────────────────────────────────────────────────────
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -24,44 +25,35 @@ async function initDB() {
       content TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT NOW()
     );
-
     CREATE TABLE IF NOT EXISTS memory (
       id SERIAL PRIMARY KEY,
       key TEXT UNIQUE NOT NULL,
       value TEXT NOT NULL,
       updated_at TIMESTAMP DEFAULT NOW()
     );
-
     CREATE TABLE IF NOT EXISTS profile (
       id SERIAL PRIMARY KEY,
       data TEXT NOT NULL,
       updated_at TIMESTAMP DEFAULT NOW()
     );
-
     CREATE INDEX IF NOT EXISTS idx_session ON conversations(session_id);
     CREATE INDEX IF NOT EXISTS idx_memory_key ON memory(key);
   `);
-
   console.log('✅ DB lista');
 }
 
+// ── Utilidades HTTP ───────────────────────────────────────────────────────────
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', c => {
       body += c;
-      if (body.length > 10 * 1024 * 1024) {
-        reject(new Error('Body demasiado grande'));
-        req.destroy();
-      }
+      if (body.length > 10 * 1024 * 1024) { reject(new Error('Body demasiado grande')); req.destroy(); }
     });
     req.on('end', () => {
       if (!body.trim()) return resolve({});
-      try {
-        resolve(JSON.parse(body));
-      } catch (e) {
-        reject(new Error('JSON inválido'));
-      }
+      try { resolve(JSON.parse(body)); }
+      catch (e) { reject(new Error('JSON inválido')); }
     });
     req.on('error', reject);
   });
@@ -82,36 +74,32 @@ function sendHTML(res, html) {
   res.end(html);
 }
 
+// ── APIs externas ─────────────────────────────────────────────────────────────
 function callClaude(apiKey, body) {
   return new Promise((resolve, reject) => {
     if (!apiKey) return reject(new Error('Falta Claude API key'));
     const data = JSON.stringify(body);
-    const req = https.request(
-      {
-        hostname: 'api.anthropic.com',
-        path: '/v1/messages',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'Content-Length': Buffer.byteLength(data)
-        }
-      },
-      res => {
-        let b = '';
-        res.on('data', c => (b += c));
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(b);
-            if (res.statusCode >= 400) return reject(new Error(parsed?.error?.message || `Claude error ${res.statusCode}`));
-            resolve(parsed);
-          } catch (e) {
-            reject(new Error('Respuesta inválida de Claude'));
-          }
-        });
+    const req = https.request({
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Length': Buffer.byteLength(data)
       }
-    );
+    }, res => {
+      let b = '';
+      res.on('data', c => (b += c));
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(b);
+          if (res.statusCode >= 400) return reject(new Error(parsed?.error?.message || `Claude error ${res.statusCode}`));
+          resolve(parsed);
+        } catch (e) { reject(new Error('Respuesta inválida de Claude')); }
+      });
+    });
     req.on('error', reject);
     req.write(data);
     req.end();
@@ -122,36 +110,31 @@ function callOpenAI(path, apiKey, body, isBuffer = false) {
   return new Promise((resolve, reject) => {
     if (!apiKey) return reject(new Error('Falta OpenAI API key'));
     const data = JSON.stringify(body);
-    const req = https.request(
-      {
-        hostname: 'api.openai.com',
-        path,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Length': Buffer.byteLength(data)
-        }
-      },
-      res => {
-        const chunks = [];
-        res.on('data', c => chunks.push(c));
-        res.on('end', () => {
-          const buf = Buffer.concat(chunks);
-          if (isBuffer) {
-            if (res.statusCode >= 400) return reject(new Error(`OpenAI error ${res.statusCode}`));
-            return resolve({ buffer: buf, contentType: res.headers['content-type'] });
-          }
-          try {
-            const parsed = JSON.parse(buf.toString());
-            if (res.statusCode >= 400) return reject(new Error(parsed?.error?.message || `OpenAI error ${res.statusCode}`));
-            resolve(parsed);
-          } catch (e) {
-            reject(new Error('Respuesta inválida de OpenAI'));
-          }
-        });
+    const req = https.request({
+      hostname: 'api.openai.com',
+      path,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Length': Buffer.byteLength(data)
       }
-    );
+    }, res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        if (isBuffer) {
+          if (res.statusCode >= 400) return reject(new Error(`OpenAI error ${res.statusCode}`));
+          return resolve({ buffer: buf, contentType: res.headers['content-type'] });
+        }
+        try {
+          const parsed = JSON.parse(buf.toString());
+          if (res.statusCode >= 400) return reject(new Error(parsed?.error?.message || `OpenAI error ${res.statusCode}`));
+          resolve(parsed);
+        } catch (e) { reject(new Error('Respuesta inválida de OpenAI')); }
+      });
+    });
     req.on('error', reject);
     req.write(data);
     req.end();
@@ -171,37 +154,76 @@ function callWhisper(apiKey, audioBuffer, mimeType, filename) {
       Buffer.from(`\r\n--${boundary}--\r\n`)
     ];
     const body = Buffer.concat(parts);
-    const req = https.request(
-      {
-        hostname: 'api.openai.com',
-        path: '/v1/audio/transcriptions',
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': `multipart/form-data; boundary=${boundary}`,
-          'Content-Length': body.length
-        }
-      },
-      res => {
-        let d = '';
-        res.on('data', c => (d += c));
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(d);
-            if (res.statusCode >= 400) return reject(new Error(parsed?.error?.message || `Whisper error ${res.statusCode}`));
-            resolve(parsed);
-          } catch (e) {
-            reject(new Error('Respuesta inválida de Whisper'));
-          }
-        });
+    const req = https.request({
+      hostname: 'api.openai.com',
+      path: '/v1/audio/transcriptions',
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': body.length
       }
-    );
+    }, res => {
+      let d = '';
+      res.on('data', c => (d += c));
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(d);
+          if (res.statusCode >= 400) return reject(new Error(parsed?.error?.message || `Whisper error ${res.statusCode}`));
+          resolve(parsed);
+        } catch (e) { reject(new Error('Respuesta inválida de Whisper')); }
+      });
+    });
     req.on('error', reject);
     req.write(body);
     req.end();
   });
 }
 
+function callN8n(webhookUrl, data) {
+  return new Promise((resolve, reject) => {
+    if (!webhookUrl) return reject(new Error('Falta webhookUrl'));
+    const body = JSON.stringify(data);
+    const u = new URL(webhookUrl);
+    const isHttps = u.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const options = {
+      hostname: u.hostname,
+      port: u.port || (isHttps ? 443 : 80),
+      path: u.pathname + (u.search || ''),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+    const req = lib.request(options, res => {
+      let b = '';
+      res.on('data', c => (b += c));
+      res.on('end', () => {
+        try {
+          const clean = b.replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+          let parsed = JSON.parse(clean);
+          if (res.statusCode >= 400) return reject(new Error(parsed?.message || `n8n error ${res.statusCode}`));
+          // Normalizar: n8n puede devolver array [{json:{...}}] o objeto directo
+          if (Array.isArray(parsed)) {
+            const first = parsed[0];
+            parsed = (first && first.json) ? first.json : first;
+          }
+          resolve(parsed);
+        } catch (e) {
+          if (res.statusCode >= 400) return reject(new Error(`n8n error ${res.statusCode}`));
+          resolve({ result: b });
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── Multipart ─────────────────────────────────────────────────────────────────
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -238,14 +260,13 @@ function parseMultipart(req) {
           pos = de + 2;
         }
         resolve(parts);
-      } catch (e) {
-        reject(e);
-      }
+      } catch (e) { reject(e); }
     });
     req.on('error', reject);
   });
 }
 
+// ── IA auxiliar ───────────────────────────────────────────────────────────────
 async function updateProfile(apiKey, newMessages, existingProfile) {
   if (!apiKey) return existingProfile || '{}';
   try {
@@ -253,16 +274,14 @@ async function updateProfile(apiKey, newMessages, existingProfile) {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 600,
       system: 'Eres un sistema de memoria. Dado un perfil existente y mensajes nuevos, actualiza el perfil del usuario en formato JSON compacto. Incluye: nombre, profesión, proyectos, preferencias, contexto importante. Responde SOLO con JSON válido, sin explicaciones.',
-      messages: [
-        {
-          role: 'user',
-          content: `PERFIL ACTUAL: ${existingProfile || '{}'}\n\nMENSAJES NUEVOS:\n${(newMessages || []).map(m => `${m.role}: ${m.content}`).join('\n')}\n\nActualiza el perfil JSON con la información nueva relevante.`
-        }
-      ]
+      messages: [{
+        role: 'user',
+        content: `PERFIL ACTUAL: ${existingProfile || '{}'}\n\nMENSAJES NUEVOS:\n${(newMessages || []).map(m => `${m.role}: ${m.content}`).join('\n')}\n\nActualiza el perfil JSON con la información nueva relevante.`
+      }]
     });
     const text = result?.content?.[0]?.text?.trim();
     if (!text) return existingProfile || '{}';
-    JSON.parse(text);
+    JSON.parse(text); // valida que es JSON
     return text;
   } catch (e) {
     console.log('Profile update error:', e.message);
@@ -286,86 +305,24 @@ async function summarizeOldConversations(apiKey, messages) {
   }
 }
 
-// Sesión en memoria del servidor — guarda confirmaciones pendientes por sesión
+// ── Sesiones pendientes (en memoria del servidor) ─────────────────────────────
+// Estructura: { pendingAction, pendingQuery, pendingEmailId, account }
 const pendingSessions = new Map();
 
-// Sesión servidor para confirmaciones pendientes
-
-function callN8n(webhookUrl, data) {
-  return new Promise((resolve, reject) => {
-    if (!webhookUrl) return reject(new Error('Falta webhookUrl'));
-    const body = JSON.stringify(data);
-    const u = new URL(webhookUrl);
-    const isHttps = u.protocol === 'https:';
-    const lib = isHttps ? https : http;
-    const options = {
-      hostname: u.hostname,
-      port: u.port || (isHttps ? 443 : 80),
-      path: u.pathname + (u.search || ''),
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
-      }
-    };
-    const req = lib.request(options, res => {
-      let b = '';
-      res.on('data', c => (b += c));
-      res.on('end', () => {
-        try {
-          // Sanitizar la respuesta de n8n antes de parsear — puede contener surrogates
-          const clean = b.replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
-          let parsed = JSON.parse(clean);
-          if (res.statusCode >= 400) return reject(new Error(parsed?.message || `n8n error ${res.statusCode}`));
-          // Normalizar respuesta de n8n: puede venir como array [{json:{...}}] o como objeto directo
-          if (Array.isArray(parsed)) {
-            // n8n devuelve array de items — extraer el primer item
-            const first = parsed[0];
-            parsed = (first && first.json) ? first.json : first;
-          }
-          resolve(parsed);
-        } catch (e) {
-          if (res.statusCode >= 400) return reject(new Error(`n8n error ${res.statusCode}`));
-          resolve({ result: b });
-        }
-      });
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
-
-// ── Detección de intención de email ──────────────────────────────────────────
+// ── Detección de intenciones ──────────────────────────────────────────────────
 function detectEmailIntent(text = '') {
   const t = text.toLowerCase();
-  
-  // CRÍTICO: acciones destructivas/modificadoras primero
-  if (/\belimina\b|\bborra\b|\bquita\b|\bsuprime\b|\bborrar\b|\beliminar\b|\bpapelera\b/.test(t)) {
-    const isOng = /\bong\b|arena|asociaci[oó]n/.test(t);
-    const isTrabajo = /\btrabajo\b|colegio|azaraque|instituto/.test(t);
-    return { action: 'eliminar', account: isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal' };
-  }
-  if (/\barchiva\b|\barchivar\b/.test(t)) {
-    const isOng = /\bong\b|arena/.test(t);
-    const isTrabajo = /\btrabajo\b|colegio/.test(t);
-    return { action: 'archivar', account: isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal' };
-  }
 
-  // Detectar cuenta
+  // Detectar cuenta primero
   const isOng     = /\bong\b|proyecto arena|arena educaci[oó]n|asociaci[oó]n/.test(t);
   const isTrabajo = /\btrabajo\b|colegio|azaraque|instituto|docente|clase|alumn/.test(t);
   const account   = isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal';
 
-  // ¿Habla de email en general?
-  const esEmail = /email|correo|mail|bandeja|inbox|mensaje.*recib|recib.*mensaje/.test(t);
-
-  // Acciones
-  // CRÍTICO: eliminar/archivar ANTES que leer para evitar falsos positivos
-  if (/elimina|eliminar|borra|borrar|suprime|suprimir|purga|papelera|quita|quitar|deshazte|mueve.*papelera/.test(t)) {
+  // CRÍTICO: acciones destructivas/modificadoras primero (antes que leer)
+  if (/\belimina\b|\bborra\b|\bquita\b|\bsuprime\b|\bborrar\b|\beliminar\b|\bpapelera\b|\bpurga\b/.test(t)) {
     return { action: 'eliminar', account };
   }
-  if (/archiva|archivar/.test(t)) {
+  if (/\barchiva\b|\barchivar\b/.test(t)) {
     return { action: 'archivar', account };
   }
   if (/env[íi]a|enviar|manda|mandar.*email|escribe.*email|redacta|componer|crear.*email|nuevo.*email/.test(t)) {
@@ -380,6 +337,8 @@ function detectEmailIntent(text = '') {
   if (/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre|correo.*sobre|de parte de/.test(t)) {
     return { action: 'buscar', query: text, account };
   }
+
+  const esEmail = /email|correo|mail|bandeja|inbox|mensaje.*recib|recib.*mensaje/.test(t);
   if (/lee|leer|revisar|revisa|mira|muestra|dame|dime|cu[aá]ntos|tengo.*email|tengo.*correo|correo.*nuevo|email.*nuevo|no le[íi]dos|[uú]ltimo.*correo|[uú]ltimo.*email|recientes|nuevos/.test(t)
       || (esEmail && /qu[eé]|cu[aá]l|hay|tengo|ver|revisa|dame|dime|mira|muestra/.test(t))) {
     return { action: 'leer', account };
@@ -387,39 +346,25 @@ function detectEmailIntent(text = '') {
   if (/marca.*le[íi]do|marcar.*le[íi]do|marca.*no le[íi]do/.test(t)) {
     return { action: 'marcar', markAs: /no le[íi]do/.test(t) ? 'noleido' : 'leido', account };
   }
-  if (/en lote|todos los de|elimina.*de|archiva.*de|borra.*de/.test(t)) {
-    return { action: 'lote', loteAction: /archiva/.test(t) ? 'archivar' : 'eliminar', criteria: text, account };
-  }
 
   // Si menciona email/correo de cualquier forma → intención de email
   if (esEmail || isOng || isTrabajo) {
     return { action: 'leer', account };
   }
-
-  // Frases naturales sin palabra clave explícita pero con contexto claro
   if (/personal|mi gmail|mi bandeja/.test(t)) {
     return { action: 'leer', account: 'personal' };
   }
-
   return null;
 }
 
-// ── Detección de intención de calendario ─────────────────────────────────────
 function detectCalendarIntent(text = '') {
   const t = text.toLowerCase();
-  if (/qu[eé] tengo|agenda|citas|reuniones|eventos|calendario|hoy|ma[nñ]ana|semana/.test(t)) {
-    return { action: 'leer' };
-  }
-  if (/crea|crear|a[nñ]ade|a[nñ]adir|pon|poner.*reuni[oó]n|poner.*cita|nueva.*reuni[oó]n/.test(t)) {
-    return { action: 'crear', content: text };
-  }
-  if (/cancela|cancelar|borra|borrar.*reuni[oó]n|elimina.*evento/.test(t)) {
-    return { action: 'eliminar', content: text };
-  }
+  if (/qu[eé] tengo|agenda|citas|reuniones|eventos|calendario|hoy|ma[nñ]ana|semana/.test(t)) return { action: 'leer' };
+  if (/crea|crear|a[nñ]ade|a[nñ]adir|pon|poner.*reuni[oó]n|poner.*cita|nueva.*reuni[oó]n/.test(t)) return { action: 'crear', content: text };
+  if (/cancela|cancelar|borra|borrar.*reuni[oó]n|elimina.*evento/.test(t)) return { action: 'eliminar', content: text };
   return null;
 }
 
-// ── Detección de intención de crear flujo ────────────────────────────────────
 function detectCreatorIntent(text = '') {
   const t = text.toLowerCase();
   if (/crea un flujo|crear un flujo|crea una automatizaci[oó]n|automatiza|quiero que cuando|cada vez que.*haz|programa un flujo/.test(t)) {
@@ -831,8 +776,10 @@ async function processMessage(userText){
     const res=await fetch('/api/chat',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        claudeKey:config.claudeKey,systemPrompt:buildSystemPrompt(),
-        messages:messages.slice(-20),model:config.model||'claude-haiku-4-5-20251001',
+        claudeKey:config.claudeKey,
+        systemPrompt:buildSystemPrompt(),
+        messages:messages.slice(-20),
+        model:config.model||'claude-haiku-4-5-20251001',
         n8nGmailPersonalUrl:config.n8nGmailPersonalUrl||'',
         n8nGmailOngUrl:config.n8nGmailOngUrl||'',
         n8nCalendarUrl:config.n8nCalendarUrl||'',
@@ -843,7 +790,6 @@ async function processMessage(userText){
         pendingAction:pendingConfirmAction||null,
         pendingQuery:pendingConfirmQuery||null,
         pendingEmailId:pendingConfirmEmailId||null,
-        sessionId:SESSION_ID,
         sessionId:SESSION_ID
       })
     });
@@ -852,6 +798,7 @@ async function processMessage(userText){
       const reply=data.content[0].text;
       messages.push({role:'assistant',content:reply});
       await saveMessage('assistant',reply);
+      // Actualizar estado de confirmación pendiente desde respuesta del servidor
       pendingConfirmAction=data._pendingAction||null;
       pendingConfirmQuery=data._pendingQuery||null;
       pendingConfirmEmailId=data._pendingEmailId||null;
@@ -966,44 +913,37 @@ const server = http.createServer(async (req, res) => {
       if (!body.claudeKey) return sendJSON(res, 400, { error: 'Falta claudeKey' });
       if (!Array.isArray(body.messages) || body.messages.length === 0) return sendJSON(res, 400, { error: 'messages es obligatorio' });
 
-      const lastMsg = body.messages[body.messages.length - 1]?.content || '';
-
-      // ── Gmail / N8N ───────────────────────────────────────────────────────
       const sanitize = (s) => String(s || '').replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').substring(0, 2000);
 
-      const emailIntent = detectEmailIntent(lastMsg);
+      const lastMsg = body.messages[body.messages.length - 1]?.content || '';
       const sessionId = body.sessionId || 'default';
       const serverSession = pendingSessions.get(sessionId) || {};
-      
-      // Leer pending del servidor (más fiable que el frontend)
-      const pendingAction  = body.pendingAction  || serverSession.pendingAction  || null;
-      const pendingQuery   = body.pendingQuery   || serverSession.pendingQuery   || null;
-      const pendingEmailId = body.pendingEmailId || serverSession.pendingEmailId || null;
 
-      // Detectar confirmación
-      const isConfirmation = /^(s[ií]|yes|ok|confirma|procede|dale|hazlo|adelante|venga)/i.test(lastMsg.trim())
-        || /confirma|procede|ejecuta/i.test(lastMsg.trim());
+      // Leer pending del servidor (fuente de verdad) con fallback al frontend
+      const pendingAction  = serverSession.pendingAction  || body.pendingAction  || null;
+      const pendingQuery   = serverSession.pendingQuery   || body.pendingQuery   || null;
+      const pendingEmailId = serverSession.pendingEmailId || body.pendingEmailId || null;
 
+      // Detectar si el mensaje es una confirmación
+      const isConfirmation = (
+        /^(s[ií]|yes|ok|confirma|procede|dale|hazlo|adelante|venga)/i.test(lastMsg.trim()) ||
+        /confirma|procede|ejecuta/i.test(lastMsg.trim())
+      );
+
+      const emailIntent = detectEmailIntent(lastMsg);
       const hasGmailUrls = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
 
-      console.log('DEBUG chat:', JSON.stringify({
-        lastMsg: lastMsg.substring(0, 80),
-        emailIntent: emailIntent ? emailIntent.action : null,
-        isConfirmation,
-        pendingAction,
-        pendingEmailId,
-        hasGmailUrls: !!hasGmailUrls
-      }));
-
-      console.log('\n═══ PASO 1: ¿Llamar a n8n? ═══');
-      console.log('  emailIntent:', emailIntent ? emailIntent.action : null);
+      console.log('\n═══ CHAT REQUEST ═══');
+      console.log('  lastMsg:', lastMsg.substring(0, 80));
+      console.log('  sessionId:', sessionId);
       console.log('  isConfirmation:', isConfirmation);
       console.log('  pendingAction (servidor):', pendingAction);
+      console.log('  pendingQuery (servidor):', pendingQuery);
       console.log('  pendingEmailId (servidor):', pendingEmailId);
-      console.log('  hasGmailUrls:', !!hasGmailUrls);
-      console.log('  sessionId:', sessionId);
+      console.log('  emailIntent:', emailIntent ? emailIntent.action : null);
       console.log('  serverSession:', JSON.stringify(serverSession));
 
+      // ── Gmail / N8N ───────────────────────────────────────────────────────
       if (hasGmailUrls && (emailIntent || (isConfirmation && pendingAction))) {
         const account = emailIntent?.account || serverSession.account || 'personal';
         let webhookUrl;
@@ -1012,72 +952,79 @@ const server = http.createServer(async (req, res) => {
         else webhookUrl = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
 
         let n8nPayload;
+
         if (isConfirmation && pendingAction) {
+          // ── CONFIRMACIÓN: manda action + query para el bypass del planificador ──
           n8nPayload = {
             text: sanitize(lastMsg),
             confirmed: true,
             emailId: pendingEmailId || '',
-            query: pendingQuery || '',
+            query: pendingQuery   || '',
+            action: pendingAction,        // ← CLAVE: informa a n8n qué acción confirmar
             autoSend: false,
             account
           };
-          console.log('\n═══ PASO 2: Enviando CONFIRMACIÓN a n8n ═══');
+          console.log('\n═══ ENVIANDO CONFIRMACIÓN a n8n ═══');
           console.log('  payload:', JSON.stringify(n8nPayload));
         } else {
+          // ── PETICIÓN NUEVA ────────────────────────────────────────────────
           n8nPayload = {
             text: sanitize(lastMsg),
             autoSend: false,
             account,
             confirmed: false
           };
-          console.log('\n═══ PASO 2: Enviando petición NUEVA a n8n ═══');
+          console.log('\n═══ ENVIANDO PETICIÓN NUEVA a n8n ═══');
           console.log('  payload:', JSON.stringify(n8nPayload));
         }
 
         try {
           const n8nResult = await callN8n(webhookUrl, n8nPayload);
-          console.log('\n═══ PASO 3: Respuesta de n8n ═══');
-          console.log('  n8nResult completo:', JSON.stringify(n8nResult).substring(0, 500));
+
+          console.log('\n═══ RESPUESTA de n8n ═══');
+          console.log('  resultado completo:', JSON.stringify(n8nResult).substring(0, 600));
           console.log('  needsConfirmation:', n8nResult.needsConfirmation);
           console.log('  pendingAction:', n8nResult.pendingAction);
+          console.log('  pendingQuery:', n8nResult.pendingQuery);
           console.log('  pendingEmailId:', n8nResult.pendingEmailId);
-          console.log('  success:', n8nResult.success);
-          console.log('  action:', n8nResult.action);
 
           if (n8nResult) {
             const hasPending = n8nResult.needsConfirmation === true;
-            
-            console.log('\n═══ PASO 4: hasPending =', hasPending, '═══');
-            
+
             if (hasPending) {
+              // Guardar sesión pendiente en el servidor
               pendingSessions.set(sessionId, {
                 pendingAction:  n8nResult.pendingAction  || 'eliminar_uno',
                 pendingQuery:   n8nResult.pendingQuery   || '',
                 pendingEmailId: n8nResult.pendingEmailId || '',
                 account
               });
+              // Auto-expirar en 10 minutos
               setTimeout(() => pendingSessions.delete(sessionId), 10 * 60 * 1000);
-              console.log('  ✅ Sesión guardada:', JSON.stringify(pendingSessions.get(sessionId)));
+              console.log('  ✅ Sesión pendiente guardada:', JSON.stringify(pendingSessions.get(sessionId)));
             } else if (isConfirmation) {
               pendingSessions.delete(sessionId);
-              console.log('  🗑️ Sesión limpiada tras ejecución');
-            } else {
-              console.log('  ℹ️ Sin pending — acción normal completada');
+              console.log('  🗑️ Sesión limpiada tras confirmación ejecutada');
             }
 
-            const safeSystem = sanitize(body.systemPrompt || '');
+            // Formatear respuesta con Claude
+            const nowStr = new Date().toLocaleString('es-ES', {
+              timeZone: 'Europe/Madrid', weekday: 'long',
+              year: 'numeric', month: 'long', day: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            });
             const formatted = await callClaude(body.claudeKey, {
               model: body.model || 'claude-haiku-4-5-20251001',
               max_tokens: 1200,
-              system: safeSystem + `
+              system: sanitize(body.systemPrompt || '') + `
 
-Fecha y hora actual: ${new Date().toLocaleString('es-ES', {timeZone:'Europe/Madrid', weekday:'long', year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit'})}.
+Fecha y hora actual: ${nowStr}.
 
 Eres un asistente que presenta resultados de acciones sobre el email.
 Reglas:
 - Si hay emails → preséntalo limpio, legible, en español. Muestra remitente, asunto y fecha.
-- La fecha actual es HOY — no confundas con fechas de los emails
-- Si needsConfirmation=true → muestra el preview del email y pide confirmación simple: "¿Confirmas? Responde sí"
+- La fecha actual es HOY — no confundas con fechas de los emails.
+- Si needsConfirmation=true → muestra el preview del email/lote y pide confirmación simple: "¿Confirmas? Responde sí"
 - Si se ejecutó una acción → confirma brevemente qué se hizo
 - Si hay un borrador → muéstralo y pregunta si quiere enviarlo
 - Sé directo y conciso. Sin markdown excesivo.`,
@@ -1087,6 +1034,7 @@ Reglas:
               }]
             });
 
+            // Adjuntar metadatos de confirmación pendiente a la respuesta
             const finalResponse = JSON.parse(JSON.stringify(formatted));
             if (hasPending) {
               finalResponse._pendingAction  = n8nResult.pendingAction  || 'eliminar_uno';
@@ -1094,11 +1042,12 @@ Reglas:
               finalResponse._pendingEmailId = n8nResult.pendingEmailId || '';
             }
 
-            console.log('Sent to frontend:', { hasPending, pendingEmailId: finalResponse._pendingEmailId });
+            console.log('  → Enviado al frontend: hasPending=%s pendingAction=%s', hasPending, finalResponse._pendingAction);
             return sendJSON(res, 200, finalResponse);
           }
         } catch (e) {
           console.log('N8N Gmail error:', e.message);
+          // Continúa a Claude directo como fallback
         }
       }
 
@@ -1151,7 +1100,11 @@ Reglas:
       }
 
       // ── Claude directo ────────────────────────────────────────────────────
-      const nowStr = new Date().toLocaleString('es-ES', {timeZone:'Europe/Madrid', weekday:'long', year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit'});
+      const nowStr = new Date().toLocaleString('es-ES', {
+        timeZone: 'Europe/Madrid', weekday: 'long',
+        year: 'numeric', month: 'long', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
       const result = await callClaude(body.claudeKey, {
         model: body.model || 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
