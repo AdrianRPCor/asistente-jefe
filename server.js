@@ -1,2523 +1,1193 @@
-{
-  "name": "Gestor Total de Gmail (Personal) PRO",
-  "nodes": [
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "86651dd0-dec6-4828-afbe-561d76c3ea16-pro",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "6e439b14-4793-4e07-bc65-9ecc570ba9d8",
-      "name": "Webhook Entrada",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        -1728,
-        896
-      ],
-      "webhookId": "86651dd0-dec6-4828-afbe-561d76c3ea16-pro"
-    },
-    {
-      "parameters": {
-        "jsCode": "const body = $input.first().json.body || $input.first().json || {};\nconst text = body.text || body.input || body.query || body.content || '';\nconst autoSend = body.autoSend === true;\nconst confirmed = body.confirmed === true;\nconst to = body.to || '';\nconst subject = body.subject || '';\nconst content = body.content || '';\nconst emailId = body.emailId || '';\nconst threadId = body.threadId || '';\nconst labelName = body.labelName || body.label || '';\nconst labelId = body.labelId || '';\nconst sendAt = body.sendAt || body.scheduleAt || '';\nconst timezone = body.timezone || 'Europe/Madrid';\nconst account = body.account || 'personal';\n\nreturn [{\n  json: {\n    raw_body: body,\n    text,\n    autoSend,\n    confirmed,\n    to,\n    subject,\n    content,\n    emailId,\n    threadId,\n    labelName,\n    labelId,\n    sendAt,\n    timezone,\n    account\n  }\n}];"
-      },
-      "id": "222febfb-b365-4def-a0da-ce2c3d13cae0",
-      "name": "Parsear Petición",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -1504,
-        896
-      ]
-    },
-    {
-      "parameters": {
-        "promptType": "define",
-        "text": "=REGLA ABSOLUTA: Si el usuario menciona \"elimina\", \"borra\", \"quita\" o \"suprime\" → action SIEMPRE es \"eliminar_uno\" o \"eliminar_lote\". NUNCA \"listar\".\nEres un planificador experto de Gmail. Tu única función es convertir la petición del usuario en JSON válido.\nCRÍTICO: Devuelve ÚNICAMENTE el objeto JSON. Sin texto antes, sin texto después, sin bloques markdown, sin explicaciones.\nEsquema de respuesta:\n{\n  \"action\": \"listar|buscar|leer_especifico|leer_completo|priorizar|eliminar_uno|eliminar_lote|archivar_lote|marcar_leido_lote|marcar_no_leido_lote|spam_lote|mover_label_lote|redactar|enviar|responder|programar_envio\",\n  \"query\": \"consulta Gmail search sintaxis nativa\",\n  \"targetHint\": \"nombre, email o asunto si aplica\",\n  \"emailId\": \"si el usuario lo proporcionó explícitamente\",\n  \"to\": \"destinatario si aplica\",\n  \"subject\": \"asunto si aplica\",\n  \"content\": \"contenido/instrucciones del email si aplica\",\n  \"labelName\": \"nombre etiqueta si aplica\",\n  \"labelId\": \"id etiqueta si aplica\",\n  \"sendAt\": \"fecha ISO 8601 si aplica\",\n  \"limit\": 10,\n  \"autoSend\": true,\n  \"reason\": \"una frase breve explicando la acción elegida\"\n}\nReglas de mapeo de acciones:\n- \"borra/elimina todos...\" → eliminar_lote\n- \"borra/elimina este/ese/el de X\" (uno solo) → eliminar_uno (usa emailId si disponible, sino targetHint)\n- \"purga/elimina para siempre/permanente...\" → eliminar_lote (y en originalText quedará la intención de purgar)\n- \"archiva...\" → archivar_lote\n- \"marca como leído...\" → marcar_leido_lote\n- \"marca como no leído...\" → marcar_no_leido_lote\n- \"marca como spam/correo no deseado...\" → spam_lote\n- \"mueve a la etiqueta/carpeta...\" → mover_label_lote\n- \"léeme el email de X / léeme el de X\" → leer_especifico\n- \"léeme completo / muéstrame todo...\" → leer_completo\n- \"responde a...\" → responder\n- \"envía un email a...\" → enviar\n- \"programa/enviar más tarde...\" → programar_envio\n- \"prioriza/clasifica/ordena por importancia...\" → priorizar\n- \"muéstrame/lista/dame los emails...\" → listar\n- \"busca emails de/sobre/con...\" → buscar\n- \"redacta/escribe un email...\" → redactar\nReglas de query Gmail:\n- Sin query clara para listar/priorizar → usa \"in:inbox\"\n- Remitente → from:email@ejemplo.com\n- Asunto → subject:\"texto\"\n- Antes de fecha → before:YYYY/MM/DD\n- Después de fecha → after:YYYY/MM/DD\n- No leídos → is:unread\n- Marketing/promociones → category:promotions\n- Con adjunto → has:attachment\nautoSend debe respetar exactamente el valor de {{$json.autoSend}}.\nSi ya viene emailId en los datos adicionales, úsalo directamente.\nINPUT DEL USUARIO:\n{{$json.text}}\nDATOS ADICIONALES (usar si el usuario no los especificó explícitamente en el texto):\nto={{$json.to}}\nsubject={{$json.subject}}\ncontent={{$json.content}}\nemailId={{$json.emailId}}\nlabelName={{$json.labelName}}\nlabelId={{$json.labelId}}\nsendAt={{$json.sendAt}}\nautoSend={{$json.autoSend}}\n\nEJEMPLOS CRÍTICOS (sigue estos exactamente):\n- \"elimina el de Just Eat\" → {\"action\":\"eliminar_uno\",\"targetHint\":\"Just Eat\",\"query\":\"from:just-eat\",\"limit\":5}\n- \"borra ese correo\" → {\"action\":\"eliminar_uno\",\"targetHint\":\"email anterior\",\"query\":\"in:inbox\",\"limit\":5}\n- \"elimina el primero de la lista\" → {\"action\":\"eliminar_uno\",\"targetHint\":\"primer email\",\"query\":\"in:inbox\",\"limit\":5}\n- \"borra todos los de promotions\" → {\"action\":\"eliminar_lote\",\"query\":\"category:promotions\",\"limit\":50}\n- \"elimina el correo de pinterest que me has mencionado\" → {\"action\":\"eliminar_uno\",\"targetHint\":\"pinterest\",\"query\":\"from:pinterest\",\"limit\":5}\n\nJSON:"
-      },
-      "id": "8b49a40f-5ea1-4c5f-b5b2-12cf2d7df96b",
-      "name": "IA Planificar Acción",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.4,
-      "position": [
-        -1328,
-        896
-      ]
-    },
-    {
-      "parameters": {
-        "model": {
-          "__rl": true,
-          "value": "claude-sonnet-4-20250514",
-          "mode": ""
-        },
-        "options": {}
-      },
-      "id": "34c1bd73-45eb-4ee1-8f9e-99b436e66448",
-      "name": "Modelo IA Planificador",
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1.3,
-      "position": [
-        -1264,
-        736
-      ],
-      "credentials": {
-        "anthropicApi": {
-          "id": "MRjeQ5orOy0YoqbT",
-          "name": "Anthropic account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const raw = $input.first().json.text || $input.first().json.output || $input.first().json.response || '';\nconst base = $('Parsear Petición').item.json;\nlet plan;\n\ntry {\n  let toParse = String(raw).trim();\n  // Strip markdown fences if model ignores the instruction\n  toParse = toParse.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  // Extract JSON object if there's text around it\n  const jsonMatch = toParse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) toParse = jsonMatch[0];\n  plan = JSON.parse(toParse);\n} catch (e) {\n  throw new Error(`IA devolvió JSON inválido: ${String(raw).substring(0, 200)}`);\n}\n\n// Validate action\nconst validActions = ['listar','buscar','leer_especifico','leer_completo','priorizar',\n  'eliminar_uno','eliminar_lote','archivar_lote','marcar_leido_lote','marcar_no_leido_lote',\n  'spam_lote','mover_label_lote','redactar','enviar','responder','programar_envio'];\n\nconst action = plan.action && validActions.includes(plan.action) ? plan.action : 'buscar';\n\nconst normalized = {\n  action,\n  query: plan.query || '',\n  targetHint: plan.targetHint || '',\n  emailId: plan.emailId || base.emailId || '',\n  to: plan.to || base.to || '',\n  subject: plan.subject || base.subject || '',\n  content: plan.content || base.content || '',\n  labelName: plan.labelName || base.labelName || '',\n  labelId: plan.labelId || base.labelId || '',\n  sendAt: plan.sendAt || base.sendAt || '',\n  limit: Math.min(Math.max(Number(plan.limit) || 10, 1), 100),\n  autoSend: typeof plan.autoSend === 'boolean' ? plan.autoSend : base.autoSend,\n  reason: plan.reason || '',\n  confirmed: base.confirmed === true || plan.confirmed === true,\n  originalText: base.text,\n  timezone: base.timezone,\n  account: base.account\n};\n\n// Default queries\nif (!normalized.query && ['listar','buscar','priorizar'].includes(normalized.action)) {\n  normalized.query = 'in:inbox';\n}\nif (!normalized.query && ['leer_especifico','leer_completo','eliminar_lote','archivar_lote',\n    'marcar_leido_lote','marcar_no_leido_lote','spam_lote','mover_label_lote'].includes(normalized.action)) {\n  normalized.query = normalized.targetHint || normalized.emailId || 'in:inbox';\n}\n\nreturn [{ json: normalized }];"
-      },
-      "id": "c456f0d0-3d96-4065-ac14-26607b7b2ef8",
-      "name": "Parsear Plan IA",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -1024,
-        896
-      ]
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "listar",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "08bd2657-36e2-4a1c-b942-3bdd0a9b748c"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "listar"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "buscar",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "af1e0974-9b83-445d-8c64-e2d6428435b3"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "buscar"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "leer_especifico",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "db3f9eb0-9415-448c-8dd7-4ff583898adb"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "leer_especifico"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "leer_completo",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "ab153963-9ac5-451c-a42a-b46b243342aa"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "leer_completo"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "priorizar",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "a3e25753-2ef8-48ec-b67f-1b45ac2250fb"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "priorizar"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "eliminar_uno",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "ca35280e-f84a-4583-a6a0-185f7868626a"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "eliminar_uno"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "eliminar_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "85cb30a2-99ac-4b17-a6c9-5e9781adeb71"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "eliminar_lote"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "archivar_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "6d4575fc-4b03-41f4-bb71-90cb1a74763b"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "archivar_lote"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "marcar_leido_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "f5943cd6-a666-4176-ab47-79ff745a1c17"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "marcar_leido_lote"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "marcar_no_leido_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "7a083781-1909-408e-b75f-351334e8f502"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "marcar_no_leido_lote"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "spam_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "25c219b8-7e9b-42b9-8eea-aa3995389144"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "spam_lote"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "mover_label_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "46ac0c5b-fb4c-423e-9d6f-05c876810f1d"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "mover_label_lote"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "redactar",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "4308f94b-f96f-4c4b-835c-69b5766e3a88"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "redactar"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "enviar",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "1f8bd914-9e30-47a3-a6b0-76e02a8d1a8a"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "enviar"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "responder",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "b3a70b6b-ee47-4d3a-b046-48dd7607b3ea"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "responder"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 1
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "programar_envio",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "3a317fde-ca4a-4cc9-90b5-410db9cdc0c0"
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "programar_envio"
-            }
-          ]
-        },
-        "options": {
-          "fallbackOutput": "extra"
-        }
-      },
-      "id": "ab788f5d-8614-453b-9b49-bcd5aefdbfca",
-      "name": "Router Inteligente",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
-      "position": [
-        -784,
-        896
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "getAll",
-        "limit": "={{ $('Parsear Plan IA').item.json.limit || 10 }}",
-        "filters": {
-          "q": "={{ $('Parsear Plan IA').item.json.query || 'is:unread in:inbox' }}"
-        }
-      },
-      "id": "a51c1021-70d0-4765-aff3-ae3a8080cdcd",
-      "name": "Gmail Buscar Para Listar",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        -496,
-        288
-      ],
-      "webhookId": "a6859d32-2472-40cc-bacd-faafe266d2ec",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "getAll",
-        "limit": "={{ $('Parsear Plan IA').item.json.limit || 10 }}",
-        "filters": {
-          "q": "={{ $('Parsear Plan IA').item.json.query }}"
-        }
-      },
-      "id": "0cdfcb0b-ba40-4ed9-9ab2-c050ee3fa775",
-      "name": "Gmail Buscar",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        -496,
-        480
-      ],
-      "webhookId": "13e28829-3963-4930-9819-3b2e946946e8",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "getAll",
-        "limit": 20,
-        "filters": {
-          "q": "={{ $('Parsear Plan IA').item.json.query || $('Parsear Plan IA').item.json.targetHint }}"
-        }
-      },
-      "id": "637ec444-fee0-4f6a-bcb5-31163b90931f",
-      "name": "Gmail Buscar Para Lectura",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        -480,
-        672
-      ],
-      "webhookId": "5d9e4f00-0686-451c-b5a8-07b566274fe2",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const plan = $('Parsear Plan IA').item.json;\nconst emails = $input.all().map(i => i.json);\n\nif (!emails.length) {\n  return [{ json: { found: false, reason: 'No se encontraron emails', plan } }];\n}\n\nif (plan.emailId) {\n  const exact = emails.find(m => m.id === plan.emailId);\n  if (exact) {\n    return [{ json: { found: true, selected: exact,\n      candidates: [{ id: exact.id, from: exact.From || exact.from, subject: exact.Subject || exact.subject, date: exact.internalDate }] } }];\n  }\n}\n\nconst norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\nconst hint = norm(plan.targetHint || plan.originalText || '');\n\nconst scored = emails.map((m) => {\n  const from    = norm(m.From    || m.from    || '');\n  const subject = norm(m.Subject || m.subject || '');\n  const snippet = norm(m.snippet || '');\n  let score = 0;\n  if (hint) {\n    const words = hint.split(/\\s+/).filter(w => w.length > 2);\n    for (const w of words) {\n      if (from.includes(w))    score += 10;\n      if (subject.includes(w)) score += 8;\n      if (snippet.includes(w)) score += 3;\n    }\n    if (from.includes(hint))    score += 5;\n    if (subject.includes(hint)) score += 4;\n  }\n  score += parseInt(m.internalDate || m.date || 0) / 1e13;\n  return { msg: m, score };\n}).sort((a, b) => b.score - a.score);\n\nreturn [{ json: {\n  found: true,\n  selected: scored[0].msg,\n  candidates: scored.slice(0, 5).map(s => ({\n    id: s.msg.id,\n    from: s.msg.From || s.msg.from,\n    subject: s.msg.Subject || s.msg.subject,\n    date: s.msg.internalDate\n  }))\n} }];"
-      },
-      "id": "deefe769-ec98-4c8a-939c-975f0e6159e1",
-      "name": "Seleccionar Mejor Email",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -256,
-        496
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "get",
-        "messageId": "={{ $('Seleccionar Mejor Email').item.json.selected.id || $('Parsear Plan IA').item.json.emailId }}"
-      },
-      "id": "e3278024-7be8-421c-b200-fd573e696351",
-      "name": "Gmail Obtener Email Completo",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        0,
-        672
-      ],
-      "webhookId": "61051175-2eea-4336-82ec-6a340ac5b410",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const emails = $input.all();\n\nconst sorted = [...emails].sort((a, b) => {\n  const da = parseInt(a.json.internalDate || 0);\n  const db = parseInt(b.json.internalDate || 0);\n  return db - da;\n});\n\nconst formatDate = (ts) => {\n  if (!ts) return 'Sin fecha';\n  const d = new Date(parseInt(ts));\n  if (isNaN(d.getTime())) return String(ts);\n  return d.toLocaleString('es-ES', {\n    day: '2-digit', month: 'short', year: 'numeric',\n    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid'\n  });\n};\n\nconst getLabel = (labels, name) => Array.isArray(labels) && labels.some(l => l.id === name || l.name === name);\n\nconst emailList = sorted.map((e, i) => {\n  const m = e.json;\n  const from    = m.From    || m.from    || 'Desconocido';\n  const subject = m.Subject || m.subject || 'Sin asunto';\n  const date    = formatDate(m.internalDate || m.date);\n  const snippet = (m.snippet || '').substring(0, 200).trim();\n  const id      = m.id || '';\n  const unread  = getLabel(m.labels, 'UNREAD') ? ' 🔵' : '';\n  const attach  = getLabel(m.labels, 'HAS_ATTACHMENT') ? ' 📎' : '';\n  return `[${i+1}]${unread}${attach} ID:${id}\\nDe: ${from}\\nAsunto: ${subject}\\nFecha: ${date}\\nExtracto: ${snippet}`;\n}).join('\\n\\n---\\n\\n');\n\nreturn [{ json: { count: sorted.length, emailList } }];"
-      },
-      "id": "d41233f9-f376-4167-8363-f29b869a6f90",
-      "name": "Formatear Emails",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -256,
-        240
-      ]
-    },
-    {
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ 'Eres un asistente de email. Resume en español estos emails de forma clara, útil y concisa. Destaca los urgentes o importantes al principio. Sé directo, no repitas información obvia.\\n\\nEmails:\\n' + $json.emailList }}"
-      },
-      "id": "2c74fd05-7693-4549-9e97-1c5a1475afe7",
-      "name": "IA Resumir Listado",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.4,
-      "position": [
-        -16,
-        128
-      ]
-    },
-    {
-      "parameters": {
-        "model": {
-          "__rl": true,
-          "value": "claude-sonnet-4-20250514",
-          "mode": ""
-        },
-        "options": {}
-      },
-      "id": "434c9c80-b091-4ef4-89d6-7526ad9264c5",
-      "name": "Modelo IA Resumen",
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1.3,
-      "position": [
-        0,
-        0
-      ],
-      "credentials": {
-        "anthropicApi": {
-          "id": "MRjeQ5orOy0YoqbT",
-          "name": "Anthropic account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ 'Analiza y prioriza estos emails. Para cada uno indica:\\n- 🔴 ALTA / 🟡 MEDIA / 🟢 BAJA prioridad\\n- Motivo breve (1 línea)\\n- Acción recomendada (responder/archivar/ignorar/gestionar)\\n\\nEmails:\\n' + $json.emailList }}"
-      },
-      "id": "31ed85c2-a8c0-4620-9fb6-9585587b74a6",
-      "name": "IA Priorizar Emails",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.4,
-      "position": [
-        16,
-        480
-      ]
-    },
-    {
-      "parameters": {
-        "model": {
-          "__rl": true,
-          "value": "claude-sonnet-4-20250514",
-          "mode": ""
-        },
-        "options": {}
-      },
-      "id": "04b34d3b-5f14-4754-8db9-b14f59d35a3a",
-      "name": "Modelo IA Priorizar",
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1.3,
-      "position": [
-        -16,
-        320
-      ],
-      "credentials": {
-        "anthropicApi": {
-          "id": "MRjeQ5orOy0YoqbT",
-          "name": "Anthropic account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const msg = $input.first().json;\n\nconst from    = msg.From    || msg.from    || msg.payload?.headers?.find(h => h.name === 'From')?.value    || 'Desconocido';\nconst to      = msg.To      || msg.to      || msg.payload?.headers?.find(h => h.name === 'To')?.value      || '';\nconst subject = msg.Subject || msg.subject || msg.payload?.headers?.find(h => h.name === 'Subject')?.value || 'Sin asunto';\n\nconst formatDate = (ts) => {\n  if (!ts) return '';\n  const d = new Date(parseInt(ts));\n  return isNaN(d.getTime()) ? String(ts) : d.toLocaleString('es-ES', {\n    day: '2-digit', month: 'short', year: 'numeric',\n    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid'\n  });\n};\nconst date = formatDate(msg.internalDate) || msg.date || '';\n\nconst body = msg.textPlain\n  || msg.snippet\n  || (msg.textHtml ? msg.textHtml.replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').trim() : '')\n  || '';\n\nconst hasAttachments = msg.payload?.parts?.some(p => p.filename && p.filename.length > 0) || false;\n\nreturn [{\n  json: {\n    result: [\n      '📧 EMAIL COMPLETO',\n      '',\n      `De: ${from}`,\n      `Para: ${to}`,\n      `Asunto: ${subject}`,\n      `Fecha: ${date}`,\n      `ID: ${msg.id || ''}`,\n      msg.threadId ? `Thread: ${msg.threadId}` : '',\n      hasAttachments ? '📎 Tiene adjuntos' : '',\n      '',\n      '─'.repeat(50),\n      '',\n      String(body).substring(0, 8000)\n    ].filter(l => l !== '').join('\\n')\n  }\n}];"
-      },
-      "id": "9c7ce5c6-6fa1-40bb-9868-87e0047a1534",
-      "name": "Construir Lectura Completa",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        512,
-        480
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "getAll",
-        "limit": 100,
-        "filters": {
-          "q": "={{ $('Parsear Plan IA').item.json.query }}"
-        }
-      },
-      "id": "f7f6db44-e9f0-46d3-b378-3f30a4a67922",
-      "name": "Gmail Buscar Para Lote",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        -464,
-        1008
-      ],
-      "webhookId": "323e23c3-16fa-4099-99f2-faa58a640ed3",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "options": {}
-      },
-      "id": "c29056aa-9cd9-40c7-bc1b-d87eb1672486",
-      "name": "Loop Lote",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [
-        -256,
-        1184
-      ]
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.action }}",
-                    "rightValue": "eliminar_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "eliminar"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.action }}",
-                    "rightValue": "archivar_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "archivar"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.action }}",
-                    "rightValue": "marcar_leido_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "marcar_leido"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.action }}",
-                    "rightValue": "marcar_no_leido_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "marcar_no_leido"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.action }}",
-                    "rightValue": "spam_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "spam"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.action }}",
-                    "rightValue": "mover_label_lote",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "mover_label"
-            }
-          ]
-        },
-        "options": {
-          "fallbackOutput": "extra"
-        }
-      },
-      "id": "5dfe5291-eccb-4cba-bcf9-a88ea51f1cf2",
-      "name": "Router Lote",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
-      "position": [
-        -96,
-        1248
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "modify"
-      },
-      "id": "59c11136-fe2e-40da-aa51-f9b59294afb0",
-      "name": "Gmail Mover a Papelera",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        192,
-        976
-      ],
-      "webhookId": "2ed65a4c-5076-4326-b66d-348a0e8673d2",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "modify"
-      },
-      "id": "40e1d4be-8d4a-4fa1-83a6-84416b26be52",
-      "name": "Gmail Archivar",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        368,
-        1104
-      ],
-      "webhookId": "6d9a4295-f572-40c5-b273-f42a4b75c284",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "modify"
-      },
-      "id": "7f9c2541-517b-429d-9ca2-edc99bd57559",
-      "name": "Gmail Marcar Leído",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        160,
-        1184
-      ],
-      "webhookId": "3443c416-9ccc-4b3d-9235-6410a0ab9fcf",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "modify"
-      },
-      "id": "3472cef0-4d61-40f9-84a0-d7a1ccbe9b42",
-      "name": "Gmail Marcar No Leído",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        560,
-        1408
-      ],
-      "webhookId": "01e4320e-a55d-47ac-81ef-d89af08cee55",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "modify"
-      },
-      "id": "ea9eb7e9-8ccf-4807-93b5-c0ababffbc13",
-      "name": "Gmail Marcar Spam",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        192,
-        1376
-      ],
-      "webhookId": "a34d6be6-e1c4-46b3-a329-01fb4c62748a",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const plan = $('Parsear Plan IA').item.json;\nconst customMap = {\n  trabajo: 'Label_TRABAJO_ID',\n  facturas: 'Label_FACTURAS_ID',\n  clientes: 'Label_CLIENTES_ID'\n};\n\nconst labelId = plan.labelId || customMap[String(plan.labelName || '').toLowerCase()] || '';\nif (!labelId) {\n  throw new Error('No se encontró labelId. Rellena labelId en la petición o actualiza customMap en el nodo Resolver Label.');\n}\nreturn [{ json: { ...$input.first().json, resolvedLabelId: labelId } }];"
-      },
-      "id": "165c6663-5bd5-43da-93d8-3efaf9f257f1",
-      "name": "Resolver Label",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        160,
-        1600
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "modify"
-      },
-      "id": "30e42759-a45f-45e6-b49a-1552db45a251",
-      "name": "Gmail Mover a Label",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        560,
-        1632
-      ],
-      "webhookId": "556e5448-2ad9-499c-a62e-3699b162e7d3",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const plan = $('Parsear Plan IA').item.json;\nreturn [{\n  json: {\n    prompt: `Redacta un email profesional y natural en español.\\n\\nPara: ${plan.to}\\nAsunto: ${plan.subject}\\nInstrucciones: ${plan.content || plan.originalText}\\n\\nFirma como Adrián. Devuelve solo el cuerpo del email.`\n  }\n}];"
-      },
-      "id": "717b5c10-ac6c-4d77-84b5-32426db38f6d",
-      "name": "Preparar Redacción",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -480,
-        1488
-      ]
-    },
-    {
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.prompt }}"
-      },
-      "id": "a65b72da-e63d-43b6-b3ad-04be6e0305e0",
-      "name": "IA Redactar Email",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.4,
-      "position": [
-        -256,
-        1632
-      ]
-    },
-    {
-      "parameters": {
-        "model": {
-          "__rl": true,
-          "value": "claude-sonnet-4-20250514",
-          "mode": ""
-        },
-        "options": {}
-      },
-      "id": "52ecec17-7655-4f4a-bff7-76318a99a08d",
-      "name": "Modelo IA Redactar",
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1.3,
-      "position": [
-        -240,
-        1760
-      ],
-      "credentials": {
-        "anthropicApi": {
-          "id": "MRjeQ5orOy0YoqbT",
-          "name": "Anthropic account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.autoSend }}",
-                    "rightValue": true,
-                    "operator": {
-                      "type": "boolean",
-                      "operation": "true",
-                      "singleValue": true
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "send"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.autoSend }}",
-                    "rightValue": false,
-                    "operator": {
-                      "type": "boolean",
-                      "operation": "false",
-                      "singleValue": true
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "draft"
-            }
-          ]
-        },
-        "options": {
-          "fallbackOutput": "extra"
-        }
-      },
-      "id": "dd5f8b52-e701-4082-bfbe-a48c843d1319",
-      "name": "¿Enviar Directamente?",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
-      "position": [
-        16,
-        1696
-      ]
-    },
-    {
-      "parameters": {
-        "sendTo": "={{ $('Parsear Plan IA').item.json.to }}",
-        "subject": "={{ $('Parsear Plan IA').item.json.subject }}",
-        "message": "={{ $json.text || $json.output || '' }}",
-        "options": {}
-      },
-      "id": "1d99d32b-9a9f-405e-8ce3-67995803e87e",
-      "name": "Gmail Enviar Redactado",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        336,
-        1664
-      ],
-      "webhookId": "c542f7b3-7fd5-47b6-9420-a9bf1d13499a",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "return [{ json: { success: true, action: 'redactar', result: ($input.first().json.text || $input.first().json.output || ''), needsConfirmation: true } }];"
-      },
-      "id": "7b308651-5f96-4c7b-a55f-2f31b385d134",
-      "name": "Devolver Borrador",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        336,
-        1840
-      ]
-    },
-    {
-      "parameters": {
-        "sendTo": "={{ $('Parsear Plan IA').item.json.to }}",
-        "subject": "={{ $('Parsear Plan IA').item.json.subject }}",
-        "message": "={{ $('Parsear Plan IA').item.json.content || $('Parsear Plan IA').item.json.originalText }}",
-        "options": {}
-      },
-      "id": "d9257963-f330-4d67-a5fb-2e8a29fcd6cc",
-      "name": "Gmail Enviar Directo",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        -480,
-        1760
-      ],
-      "webhookId": "a9c30941-8f40-4762-bea4-8e917b46a91f",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "get",
-        "messageId": "={{ $('Parsear Plan IA').item.json.emailId || $('Seleccionar Mejor Email').item.json.selected.id }}"
-      },
-      "id": "1e9973cd-e9ae-41be-b1e6-7734460c8793",
-      "name": "Gmail Obtener Para Responder",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        -480,
-        1984
-      ],
-      "webhookId": "90366e9a-36f2-479f-a870-49f49b0c2dab",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const plan = $('Parsear Plan IA').item.json;\nconst email = $input.first().json;\nconst from = email.from || email.payload?.headers?.find(h => h.name === 'From')?.value || '';\nconst subject = email.subject || email.payload?.headers?.find(h => h.name === 'Subject')?.value || '';\nconst body = email.textPlain || email.snippet || '';\nconst replyTo = email.replyTo || email.payload?.headers?.find(h => h.name === 'Reply-To')?.value || from;\n\nreturn [{\n  json: {\n    prompt: `Redacta una respuesta profesional, natural y breve en español para este email.\\n\\nDe: ${from}\\nAsunto: ${subject}\\nContenido recibido: ${String(body).substring(0, 4000)}\\n\\nInstrucciones extra del usuario: ${plan.content || plan.originalText}\\n\\nFirma como Adrián. Devuelve solo el cuerpo de la respuesta.`,\n    replyToMessageId: email.id,\n    replyTo,\n    subject\n  }\n}];"
-      },
-      "id": "eb10db0e-3eee-4b23-bb22-90b36af2a304",
-      "name": "Preparar Respuesta",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -256,
-        2000
-      ]
-    },
-    {
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.prompt }}"
-      },
-      "id": "e8c8efee-9036-4096-a397-dc643f824839",
-      "name": "IA Redactar Respuesta",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.4,
-      "position": [
-        -48,
-        2016
-      ]
-    },
-    {
-      "parameters": {
-        "model": {
-          "__rl": true,
-          "value": "claude-sonnet-4-20250514",
-          "mode": ""
-        },
-        "options": {}
-      },
-      "id": "2e1107b9-1874-4808-b11e-102112a56a1c",
-      "name": "Modelo IA Responder",
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1.3,
-      "position": [
-        -16,
-        2160
-      ],
-      "credentials": {
-        "anthropicApi": {
-          "id": "MRjeQ5orOy0YoqbT",
-          "name": "Anthropic account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.autoSend }}",
-                    "rightValue": true,
-                    "operator": {
-                      "type": "boolean",
-                      "operation": "true",
-                      "singleValue": true
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "send"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Parsear Plan IA').item.json.autoSend }}",
-                    "rightValue": false,
-                    "operator": {
-                      "type": "boolean",
-                      "operation": "false",
-                      "singleValue": true
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "draft"
-            }
-          ]
-        },
-        "options": {
-          "fallbackOutput": "extra"
-        }
-      },
-      "id": "7ce4419b-c15a-49e7-9b40-00a7fc9a683f",
-      "name": "¿Enviar Respuesta Ya?",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
-      "position": [
-        256,
-        2000
-      ]
-    },
-    {
-      "parameters": {
-        "sendTo": "={{ $('Preparar Respuesta').item.json.replyTo || $('Gmail Obtener Para Responder').item.json.from || '' }}",
-        "subject": "={{ 'Re: ' + ($('Preparar Respuesta').item.json.subject || '') }}",
-        "message": "={{ $json.text || $json.output || '' }}",
-        "options": {}
-      },
-      "id": "f5e4565f-cf66-41f3-87f9-ab364e0e7cec",
-      "name": "Gmail Enviar Respuesta",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        512,
-        1920
-      ],
-      "webhookId": "ce9b7f4f-0070-402f-8c17-1813594e779c",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "return [{ json: { success: true, action: 'responder', result: ($input.first().json.text || $input.first().json.output || ''), needsConfirmation: true } }];"
-      },
-      "id": "6326bc46-2e95-4748-8ce4-02f07114e3a7",
-      "name": "Devolver Respuesta",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        512,
-        2080
-      ]
-    },
-    {
-      "parameters": {
-        "resume": "specificTime",
-        "dateTime": "={{ $('Parsear Plan IA').item.json.sendAt }}"
-      },
-      "id": "1d1f3bb6-aeab-4e87-9823-81dfcfd8fd04",
-      "name": "Esperar Hasta Envío",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        -480,
-        2176
-      ],
-      "webhookId": "a691388a-830c-4898-85a4-8cb31de2a77c"
-    },
-    {
-      "parameters": {
-        "sendTo": "={{ $('Parsear Plan IA').item.json.to }}",
-        "subject": "={{ $('Parsear Plan IA').item.json.subject }}",
-        "message": "={{ $('Parsear Plan IA').item.json.content || $('Parsear Plan IA').item.json.originalText }}",
-        "options": {}
-      },
-      "id": "121caed4-1122-4fe7-84d3-92a76187063c",
-      "name": "Gmail Enviar Programado",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        -240,
-        2176
-      ],
-      "webhookId": "9bb885da-0dc2-484a-a98b-299a940ef575",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const plan = $('Parsear Plan IA').item.json;\nlet result = {};\n\ntry {\n  const action = plan.action;\n\n  if (['listar','buscar'].includes(action)) {\n    const ai = $('IA Resumir Listado').item?.json?.text || $('IA Resumir Listado').item?.json?.output || '';\n    const raw = $('Formatear Emails').item?.json?.emailList || '';\n    const count = $('Formatear Emails').item?.json?.count || 0;\n    result = {\n      success: true,\n      action,\n      count,\n      result: `📬 EMAILS ENCONTRADOS (${count}):\\n\\n${raw}\\n\\n---\\n🤖 RESUMEN IA:\\n${ai}`\n    };\n\n  } else if (action === 'priorizar') {\n    const ai = $('IA Priorizar Emails').item?.json?.text || $('IA Priorizar Emails').item?.json?.output || '';\n    const count = $('Formatear Emails').item?.json?.count || 0;\n    result = { success: true, action, count, result: `📊 PRIORIZACIÓN (${count} emails):\\n\\n${ai}` };\n\n  } else if (['leer_especifico','leer_completo'].includes(action)) {\n    result = { success: true, action, result: $('Construir Lectura Completa').item?.json?.result || 'No se pudo leer el email' };\n\n  } else if (action === 'eliminar_uno') {\n    let confirmResult = null;\n    try { confirmResult = $('¿Confirmar Eliminar Uno?').item?.json; } catch(e) {}\n    if (confirmResult?.needsConfirmation === true) {\n      result = {\n        success: true,\n        needsConfirmation: true,\n        pendingAction: 'eliminar_uno',\n        pendingEmailId: confirmResult.pendingEmailId || null,\n        result: confirmResult.result || '¿Confirmas la eliminación?'\n      };\n    } else {\n      result = { \n        success: true, \n        action,\n        needsConfirmation: false,\n        result: '🗑️ Email movido a la papelera. Tienes 30 días para recuperarlo.' \n      };\n    }\n  } else if (['eliminar_lote','archivar_lote','marcar_leido_lote','marcar_no_leido_lote','spam_lote','mover_label_lote'].includes(action)) {\n    // ¿Vino del path de preview (sin confirmar)?\n    let previewResult = null;\n    try { previewResult = $('Devolver Preview Lote').item?.json; } catch(e) {}\n\n    if (previewResult?.needsConfirmation) {\n      result = previewResult;\n    } else {\n      // Ejecución confirmada\n      const actionLabels = {\n        eliminar_lote: plan.isPurge ? '🗑️💀 Eliminados permanentemente' : '🗑️ Movidos a papelera (recuperables 30 días)',\n        archivar_lote: '📦 Archivados correctamente',\n        marcar_leido_lote: '✅ Marcados como leídos',\n        marcar_no_leido_lote: '🔵 Marcados como no leídos',\n        spam_lote: '🚫 Marcados como spam',\n        mover_label_lote: `📁 Movidos a \"${plan.labelName || plan.labelId}\"`\n      };\n      const label = actionLabels[action] || action;\n      const tip = action === 'eliminar_lote' && !plan.isPurge\n        ? '\\n💡 Puedes recuperarlos en la papelera de Gmail durante 30 días.' : '';\n      result = {\n        success: true,\n        action,\n        result: `${label}.\\nQuery ejecutada: ${plan.query}${tip}`\n      };\n    }\n\n  } else if (action === 'redactar') {\n    if (plan.autoSend) {\n      result = { success: true, action, result: '✉️ Email redactado y enviado.' };\n    } else {\n      result = $('Devolver Borrador').item?.json || { success: true, action, result: 'Borrador listo.', needsConfirmation: true };\n    }\n\n  } else if (action === 'enviar') {\n    result = { success: true, action, result: '✉️ Email enviado correctamente.' };\n\n  } else if (action === 'responder') {\n    if (plan.autoSend) {\n      result = { success: true, action, result: '↩️ Respuesta enviada.' };\n    } else {\n      result = $('Devolver Respuesta').item?.json || { success: true, action, result: 'Borrador de respuesta listo.', needsConfirmation: true };\n    }\n\n  } else if (action === 'programar_envio') {\n    result = { success: true, action, result: `⏰ Email programado para el ${plan.sendAt}.` };\n\n  } else {\n    result = { success: false, action, result: `⚠️ Acción no reconocida: \"${action}\"` };\n  }\n\n} catch (e) {\n  result = { success: false, action: plan?.action || 'unknown', error: e.message };\n}\n\nreturn [{ json: result }];"
-      },
-      "id": "34484f13-8dde-477f-9d0e-8ac358baa03f",
-      "name": "Construir Respuesta Final",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        784,
-        896
-      ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              }
-            ]
-          }
-        }
-      },
-      "id": "3b08a282-780b-4907-b7de-f17593d79050",
-      "name": "Responder al Asistente",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        1024,
-        896
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "delete",
-        "messageId": "={{ $json.id }}"
-      },
-      "id": "09faa58e-cbb3-47bd-bbe3-cf596a20d3b4",
-      "name": "Gmail Eliminar Permanente",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        192,
-        736
-      ],
-      "webhookId": "ca4fd7e3-c907-46bb-915a-66dd46bdd744",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const plan = $('Parsear Plan IA').item.json;\nconst emails = $input.all().map(i => i.json);\nconst count = emails.length;\n\nconst isPurge     = /para siempre|permanente|purga|purgar/i.test(plan.originalText || '');\nconst isConfirmed = plan.confirmed === true;\nconst isDryRun    = /dry.?run|previsualiz|qué (va a|vas a|voy a)|muéstrame antes|lista antes|ver antes/i.test(plan.originalText || '');\n\nconst formatDate = (ts) => {\n  if (!ts) return '';\n  const d = new Date(parseInt(ts));\n  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'numeric'});\n};\n\nconst preview = emails.slice(0, 25).map((m, i) => {\n  const from    = m.From    || m.from    || 'Desconocido';\n  const subject = m.Subject || m.subject || 'Sin asunto';\n  const date    = formatDate(m.internalDate || m.date);\n  return `  ${i+1}. [${m.id || ''}] ${from} — \"${subject}\" (${date})`;\n}).join('\\n');\nconst moreText = count > 25 ? `\\n  ... y ${count - 25} más` : '';\n\nconst actionLabels = {\n  eliminar_lote: isPurge ? '🗑️💀 ELIMINAR PERMANENTEMENTE (irreversible)' : '🗑️ Mover a papelera (recuperable 30 días)',\n  archivar_lote: '📦 Archivar',\n  marcar_leido_lote: '✅ Marcar como leído',\n  marcar_no_leido_lote: '🔵 Marcar como no leído',\n  spam_lote: '🚫 Marcar como spam',\n  mover_label_lote: `📁 Mover a etiqueta \"${plan.labelName || plan.labelId}\"`\n};\n\nreturn [{\n  json: { emails, count, isPurge, isDryRun, isConfirmed,\n    preview: preview + moreText, plan,\n    actionLabel: actionLabels[plan.action] || plan.action }\n}];"
-      },
-      "id": "bc4e7087-5ea5-4c8c-baff-ca2d1a79b872",
-      "name": "Contar y Validar Lote",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -256,
-        864
-      ]
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.isConfirmed && $json.isPurge }}",
-                    "rightValue": true,
-                    "operator": {
-                      "type": "boolean",
-                      "operation": "true",
-                      "singleValue": true
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "ejecutar_purge"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": false
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.isConfirmed && !$json.isPurge }}",
-                    "rightValue": true,
-                    "operator": {
-                      "type": "boolean",
-                      "operation": "true",
-                      "singleValue": true
-                    }
-                  }
-                ]
-              },
-              "renameOutput": true,
-              "outputKey": "ejecutar_normal"
-            }
-          ]
-        },
-        "options": {
-          "fallbackOutput": "extra"
-        }
-      },
-      "id": "faa6d942-dcbe-4d2d-a5f3-9808d11220d9",
-      "name": "¿Proceder con Lote?",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        -96,
-        1008
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const d = $input.first().json;\n\nconst warningPurge = d.isPurge \n  ? '\\n\\n⚠️ ATENCIÓN: Esta acción es IRREVERSIBLE. Los emails se eliminarán permanentemente.'\n  : d.plan.action === 'eliminar_lote' \n    ? '\\n\\n💡 Los emails irán a la papelera — tienes 30 días para recuperarlos.'\n    : '';\n\nconst confirmMsg = `Para confirmar, responde con: {\"text\": \"confirma ${d.plan.action}\", \"confirmed\": true, \"query\": \"${d.plan.query}\"${d.plan.isPurge ? ', \"purge\": true' : ''}}`;\n\nreturn [{\n  json: {\n    success: true,\n    action: d.plan.action,\n    count: d.count,\n    result: `🔍 PREVISUALIZACIÓN — ${d.actionLabel}\\n\\nAfectados: ${d.count} emails\\n\\n${d.preview}${warningPurge}\\n\\n${confirmMsg}`,\n    needsConfirmation: true,\n    pendingAction: d.plan.action,\n    pendingQuery: d.plan.query,\n    pendingCount: d.count\n  }\n}];"
-      },
-      "id": "1c93f8e9-8861-4271-b348-9be1c7ca9c63",
-      "name": "Devolver Preview Lote",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        560,
-        1168
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const d = $input.first().json;\n// Expand each email as a separate item for the loop\nreturn d.emails.map(email => ({ json: email }));"
-      },
-      "id": "d4471a22-2bed-43d5-9663-d96c487f1940",
-      "name": "Expandir Emails Para Loop",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        368,
-        1280
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const d = $input.first().json;\nreturn d.emails.map(email => ({ json: email }));"
-      },
-      "id": "9a18f8a0-ce3e-4291-a89d-1e56e98c9c77",
-      "name": "Expandir Emails Para Purge",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        432,
-        960
-      ]
-    },
-    {
-      "parameters": {
-        "options": {}
-      },
-      "id": "2420a68b-219c-4595-95bb-baa09e8b01f7",
-      "name": "Loop Purge",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [
-        544,
-        832
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "getAll",
-        "limit": 5,
-        "filters": {
-          "q": "={{ $('Parsear Plan IA').item.json.emailId ? 'rfc822msgid:' + $('Parsear Plan IA').item.json.emailId : $('Parsear Plan IA').item.json.query || $('Parsear Plan IA').item.json.targetHint }}"
-        }
-      },
-      "id": "400057b2-317e-4732-9413-ccac2a4df7bd",
-      "name": "Gmail Buscar Para Eliminar Uno",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        -480,
-        800
-      ],
-      "webhookId": "8f4f80b2-ff49-4970-a364-849d6ce0173e",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const plan = $('Parsear Plan IA').item.json;\nconst emails = $input.all().map(i => i.json);\n\nif (!emails.length) {\n  return [{ json: { found: false, reason: 'No se encontró el email', plan } }];\n}\n\n// Si viene emailId exacto, buscar directo\nif (plan.emailId) {\n  const exact = emails.find(m => m.id === plan.emailId);\n  if (exact) return [{ json: { found: true, selected: exact } }];\n}\n\n// Sino, coger el más reciente que coincida\nconst norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\nconst hint = norm(plan.targetHint || plan.originalText || '');\n\nconst scored = emails.map(m => {\n  const from    = norm(m.From || m.from || '');\n  const subject = norm(m.Subject || m.subject || '');\n  let score = 0;\n  if (hint) {\n    hint.split(/\\s+/).filter(w => w.length > 2).forEach(w => {\n      if (from.includes(w))    score += 10;\n      if (subject.includes(w)) score += 8;\n    });\n  }\n  score += parseInt(m.internalDate || 0) / 1e13;\n  return { msg: m, score };\n}).sort((a, b) => b.score - a.score);\n\nreturn [{ json: { found: true, selected: scored[0].msg } }];"
-      },
-      "id": "d39f8be2-153c-438f-acb8-b75682d6b622",
-      "name": "Seleccionar Email Para Borrar",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -208,
-        720
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const d = $input.first().json;\nconst plan = $('Parsear Plan IA').item.json;\n\nif (!d.found) {\n  return [{ json: { success: false, result: 'No encontré ese email. ¿Puedes darme más detalles?' } }];\n}\n\nconst m = d.selected;\nconst from    = m.From    || m.from    || 'Desconocido';\nconst subject = m.Subject || m.subject || 'Sin asunto';\nconst formatDate = (ts) => ts ? new Date(parseInt(ts)).toLocaleString('es-ES', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'}) : '';\nconst date = formatDate(m.internalDate);\n\nconst isPurge = /para siempre|permanente|purga|purgar/i.test(plan.originalText || '');\nconst trashMsg = isPurge ? '⚠️ Eliminación PERMANENTE e irreversible.' : '💡 Irá a la papelera — recuperable 30 días.';\n\nreturn [{\n  json: {\n    success: true,\n    needsConfirmation: true,\n    pendingAction: 'eliminar_uno',\n    pendingEmailId: m.id,\n    isPurge,\n    result: `🔍 Email encontrado:\\n\\nDe: ${from}\\nAsunto: ${subject}\\nFecha: ${date}\\nID: ${m.id}\\n\\n${trashMsg}\\n\\n¿Confirmas que quieres eliminarlo? Responde \"sí, confirma\"`\n  }\n}];"
-      },
-      "id": "4dbd90e5-0236-4913-b408-e87f03b04e06",
-      "name": "Preview Eliminar Uno",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -48,
-        880
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const plan = $('Parsear Plan IA').item.json;\nconst d = $input.first().json;\n\nif (!d.found || !d.selected) {\n  return [{ json: { \n    success: false, \n    needsConfirmation: false,\n    result: 'No encontré ese email. ¿Puedes darme más detalles?' \n  }}];\n}\n\nconst m = d.selected;\nconst from    = m.From    || m.from    || 'Desconocido';\nconst subject = m.Subject || m.subject || 'Sin asunto';\nconst formatDate = (ts) => ts ? new Date(parseInt(ts)).toLocaleString('es-ES', {\n  day:'2-digit', month:'short', year:'numeric',\n  hour:'2-digit', minute:'2-digit', timeZone:'Europe/Madrid'\n}) : '';\nconst date = formatDate(m.internalDate);\nconst isPurge = /para siempre|permanente|purga|purgar/i.test(plan.originalText || '');\n\n// Si ya está confirmado → pasar el emailId para que el siguiente nodo lo elimine\nif (plan.confirmed === true) {\n  return [{ json: { \n    ...d,\n    confirmed: true,\n    resolvedEmailId: m.id,\n    isPurge\n  }}];\n}\n\n// No confirmado → devolver preview\nreturn [{ json: { \n  success: true,\n  needsConfirmation: true,\n  pendingAction: 'eliminar_uno',\n  pendingEmailId: m.id,\n  isPurge,\n  result: `🔍 Email encontrado:\\n\\nDe: ${from}\\nAsunto: ${subject}\\nFecha: ${date}\\nID: ${m.id}\\n\\n${isPurge ? '⚠️ Eliminación PERMANENTE e irreversible.' : '💡 Irá a la papelera — recuperable 30 días.'}\\n\\n¿Confirmas que quieres eliminarlo?`\n}}];"
-      },
-      "id": "147b0b88-2c14-46f7-aeaa-a49914fd17f3",
-      "name": "¿Confirmar Eliminar Uno?",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        336,
-        688
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "modify",
-        "messageId": "={{ $json.resolvedEmailId }}",
-        "addLabelIds": [
-          "TRASH"
-        ],
-        "removeLabelIds": [
-          "INBOX"
-        ]
-      },
-      "id": "e76ed3eb-4b6d-4a8b-9a0f-e338e36ce3e4",
-      "name": "Gmail Mover Uno a Papelera",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        720,
-        624
-      ],
-      "webhookId": "2e03475b-94a3-4ca2-988d-6339fb28bf9d",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "delete",
-        "messageId": "={{ $('Parsear Plan IA').item.json.emailId || $('Parsear Plan IA').item.json.pendingEmailId }}"
-      },
-      "id": "c2b62ffb-7512-4c94-a80f-3bb4d03e55ea",
-      "name": "Gmail Eliminar Uno Permanente",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        816,
-        1104
-      ],
-      "webhookId": "7e85eb79-151f-4678-8316-c2d56d62b584",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "6mzgNDRrVjdcFxeW",
-          "name": "Gmail account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.confirmed }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "27f40151-003f-48ab-a479-4c6c6dcdd062",
-      "name": "IF Ejecutar Eliminar",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        496,
-        672
-      ]
-    }
-  ],
-  "pinData": {},
-  "connections": {
-    "Webhook Entrada": {
-      "main": [
-        [
-          {
-            "node": "Parsear Petición",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parsear Petición": {
-      "main": [
-        [
-          {
-            "node": "IA Planificar Acción",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Modelo IA Planificador": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "IA Planificar Acción",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IA Planificar Acción": {
-      "main": [
-        [
-          {
-            "node": "Parsear Plan IA",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parsear Plan IA": {
-      "main": [
-        [
-          {
-            "node": "Router Inteligente",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Router Inteligente": {
-      "main": [
-        [
-          {
-            "node": "Gmail Buscar Para Listar",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Lectura",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Lectura",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Listar",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Eliminar Uno",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Lote",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Lote",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Lote",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Lote",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Lote",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Buscar Para Lote",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Preparar Redacción",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Enviar Directo",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Obtener Para Responder",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Esperar Hasta Envío",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Buscar Para Listar": {
-      "main": [
-        [
-          {
-            "node": "Formatear Emails",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Buscar": {
-      "main": [
-        [
-          {
-            "node": "Formatear Emails",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Formatear Emails": {
-      "main": [
-        [
-          {
-            "node": "IA Resumir Listado",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Modelo IA Resumen": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "IA Resumir Listado",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Modelo IA Priorizar": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "IA Priorizar Emails",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IA Resumir Listado": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IA Priorizar Emails": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Buscar Para Lectura": {
-      "main": [
-        [
-          {
-            "node": "Seleccionar Mejor Email",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Seleccionar Mejor Email": {
-      "main": [
-        [
-          {
-            "node": "Gmail Obtener Email Completo",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Obtener Email Completo": {
-      "main": [
-        [
-          {
-            "node": "Construir Lectura Completa",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Construir Lectura Completa": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Buscar Para Lote": {
-      "main": [
-        [
-          {
-            "node": "Contar y Validar Lote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Loop Lote": {
-      "main": [
-        [
-          {
-            "node": "Router Lote",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Router Lote": {
-      "main": [
-        [],
-        [
-          {
-            "node": "Gmail Archivar",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Marcar Leído",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Marcar No Leído",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Gmail Marcar Spam",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Resolver Label",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Archivar": {
-      "main": [
-        [
-          {
-            "node": "Loop Lote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Marcar Leído": {
-      "main": [
-        [
-          {
-            "node": "Loop Lote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Marcar No Leído": {
-      "main": [
-        [
-          {
-            "node": "Loop Lote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Marcar Spam": {
-      "main": [
-        [
-          {
-            "node": "Loop Lote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Resolver Label": {
-      "main": [
-        [
-          {
-            "node": "Gmail Mover a Label",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Mover a Label": {
-      "main": [
-        [
-          {
-            "node": "Loop Lote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Preparar Redacción": {
-      "main": [
-        [
-          {
-            "node": "IA Redactar Email",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Modelo IA Redactar": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "IA Redactar Email",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IA Redactar Email": {
-      "main": [
-        [
-          {
-            "node": "¿Enviar Directamente?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "¿Enviar Directamente?": {
-      "main": [
-        [
-          {
-            "node": "Gmail Enviar Redactado",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Devolver Borrador",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Enviar Redactado": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Devolver Borrador": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Enviar Directo": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Obtener Para Responder": {
-      "main": [
-        [
-          {
-            "node": "Preparar Respuesta",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Preparar Respuesta": {
-      "main": [
-        [
-          {
-            "node": "IA Redactar Respuesta",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Modelo IA Responder": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "IA Redactar Respuesta",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IA Redactar Respuesta": {
-      "main": [
-        [
-          {
-            "node": "¿Enviar Respuesta Ya?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "¿Enviar Respuesta Ya?": {
-      "main": [
-        [
-          {
-            "node": "Gmail Enviar Respuesta",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Devolver Respuesta",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Enviar Respuesta": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Devolver Respuesta": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Esperar Hasta Envío": {
-      "main": [
-        [
-          {
-            "node": "Gmail Enviar Programado",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Enviar Programado": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Construir Respuesta Final": {
-      "main": [
-        [
-          {
-            "node": "Responder al Asistente",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Contar y Validar Lote": {
-      "main": [
-        [
-          {
-            "node": "¿Proceder con Lote?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "¿Proceder con Lote?": {
-      "main": [
-        [
-          {
-            "node": "Devolver Preview Lote",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Expandir Emails Para Purge",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Expandir Emails Para Loop",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Devolver Preview Lote": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Expandir Emails Para Loop": {
-      "main": [
-        [
-          {
-            "node": "Loop Lote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Expandir Emails Para Purge": {
-      "main": [
-        [
-          {
-            "node": "Loop Purge",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Loop Purge": {
-      "main": [
-        [
-          {
-            "node": "Gmail Eliminar Permanente",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Eliminar Permanente": {
-      "main": [
-        [
-          {
-            "node": "Loop Purge",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Mover a Papelera": {
-      "main": [
-        [
-          {
-            "node": "Loop Lote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Buscar Para Eliminar Uno": {
-      "main": [
-        [
-          {
-            "node": "Seleccionar Email Para Borrar",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Seleccionar Email Para Borrar": {
-      "main": [
-        [
-          {
-            "node": "¿Confirmar Eliminar Uno?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "¿Confirmar Eliminar Uno?": {
-      "main": [
-        [
-          {
-            "node": "IF Ejecutar Eliminar",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Mover Uno a Papelera": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gmail Eliminar Uno Permanente": {
-      "main": [
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Ejecutar Eliminar": {
-      "main": [
-        [
-          {
-            "node": "Gmail Mover Uno a Papelera",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Construir Respuesta Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
-  },
-  "active": true,
-  "settings": {
-    "executionOrder": "v1",
-    "binaryMode": "separate"
-  },
-  "versionId": "2a06ba01-d533-4931-9870-e371e415aa87",
-  "meta": {
-    "instanceId": "b5cd3c088f8394d49e073cf4f1c3f7cf25b3c14c5b15f0522cb049331fefe48c"
-  },
-  "id": "kCTadpWXYLQdR2En",
-  "tags": []
+const http = require('http');
+const https = require('https');
+const url = require('url');
+const { Pool } = require('pg');
+
+const PORT = process.env.PORT || 3000;
+
+if (!process.env.DATABASE_URL) {
+  console.error('❌ Falta DATABASE_URL');
+  process.exit(1);
 }
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id SERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS memory (
+      id SERIAL PRIMARY KEY,
+      key TEXT UNIQUE NOT NULL,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS profile (
+      id SERIAL PRIMARY KEY,
+      data TEXT NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_session ON conversations(session_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_key ON memory(key);
+  `);
+
+  console.log('✅ DB lista');
+}
+
+function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', c => {
+      body += c;
+      if (body.length > 10 * 1024 * 1024) {
+        reject(new Error('Body demasiado grande'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (!body.trim()) return resolve({});
+      try {
+        resolve(JSON.parse(body));
+      } catch (e) {
+        reject(new Error('JSON inválido'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function sendJSON(res, status, data) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+  res.end(JSON.stringify(data));
+}
+
+function sendHTML(res, html) {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(html);
+}
+
+function callClaude(apiKey, body) {
+  return new Promise((resolve, reject) => {
+    if (!apiKey) return reject(new Error('Falta Claude API key'));
+    const data = JSON.stringify(body);
+    const req = https.request(
+      {
+        hostname: 'api.anthropic.com',
+        path: '/v1/messages',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Length': Buffer.byteLength(data)
+        }
+      },
+      res => {
+        let b = '';
+        res.on('data', c => (b += c));
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(b);
+            if (res.statusCode >= 400) return reject(new Error(parsed?.error?.message || `Claude error ${res.statusCode}`));
+            resolve(parsed);
+          } catch (e) {
+            reject(new Error('Respuesta inválida de Claude'));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+function callOpenAI(path, apiKey, body, isBuffer = false) {
+  return new Promise((resolve, reject) => {
+    if (!apiKey) return reject(new Error('Falta OpenAI API key'));
+    const data = JSON.stringify(body);
+    const req = https.request(
+      {
+        hostname: 'api.openai.com',
+        path,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Length': Buffer.byteLength(data)
+        }
+      },
+      res => {
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          if (isBuffer) {
+            if (res.statusCode >= 400) return reject(new Error(`OpenAI error ${res.statusCode}`));
+            return resolve({ buffer: buf, contentType: res.headers['content-type'] });
+          }
+          try {
+            const parsed = JSON.parse(buf.toString());
+            if (res.statusCode >= 400) return reject(new Error(parsed?.error?.message || `OpenAI error ${res.statusCode}`));
+            resolve(parsed);
+          } catch (e) {
+            reject(new Error('Respuesta inválida de OpenAI'));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+function callWhisper(apiKey, audioBuffer, mimeType, filename) {
+  return new Promise((resolve, reject) => {
+    if (!apiKey) return reject(new Error('Falta OpenAI API key'));
+    const boundary = '----FB' + Math.random().toString(36).slice(2);
+    const ext = (filename || 'audio.webm').split('.').pop();
+    const parts = [
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nes\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.${ext}"\r\nContent-Type: ${mimeType}\r\n\r\n`),
+      audioBuffer,
+      Buffer.from(`\r\n--${boundary}--\r\n`)
+    ];
+    const body = Buffer.concat(parts);
+    const req = https.request(
+      {
+        hostname: 'api.openai.com',
+        path: '/v1/audio/transcriptions',
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length
+        }
+      },
+      res => {
+        let d = '';
+        res.on('data', c => (d += c));
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(d);
+            if (res.statusCode >= 400) return reject(new Error(parsed?.error?.message || `Whisper error ${res.statusCode}`));
+            resolve(parsed);
+          } catch (e) {
+            reject(new Error('Respuesta inválida de Whisper'));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+function parseMultipart(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', c => chunks.push(c));
+    req.on('end', () => {
+      try {
+        const buf = Buffer.concat(chunks);
+        const ct = req.headers['content-type'] || '';
+        const bm = ct.match(/boundary=(.+)$/);
+        if (!bm) return reject(new Error('No boundary'));
+        const boundary = Buffer.from('--' + bm[1]);
+        const parts = {};
+        let pos = 0;
+        while (pos < buf.length) {
+          const bp = buf.indexOf(boundary, pos);
+          if (bp === -1) break;
+          pos = bp + boundary.length + 2;
+          const he = buf.indexOf(Buffer.from('\r\n\r\n'), pos);
+          if (he === -1) break;
+          const headers = buf.slice(pos, he).toString();
+          pos = he + 4;
+          const nb = buf.indexOf(boundary, pos);
+          const de = nb === -1 ? buf.length : nb - 2;
+          const nm = headers.match(/name="([^"]+)"/);
+          const fn = headers.match(/filename="([^"]+)"/);
+          const cm = headers.match(/Content-Type: (.+)/);
+          if (nm) {
+            parts[nm[1]] = {
+              data: buf.slice(pos, de),
+              filename: fn ? fn[1] : null,
+              contentType: cm ? cm[1].trim() : 'text/plain'
+            };
+          }
+          pos = de + 2;
+        }
+        resolve(parts);
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+async function updateProfile(apiKey, newMessages, existingProfile) {
+  if (!apiKey) return existingProfile || '{}';
+  try {
+    const result = await callClaude(apiKey, {
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      system: 'Eres un sistema de memoria. Dado un perfil existente y mensajes nuevos, actualiza el perfil del usuario en formato JSON compacto. Incluye: nombre, profesión, proyectos, preferencias, contexto importante. Responde SOLO con JSON válido, sin explicaciones.',
+      messages: [
+        {
+          role: 'user',
+          content: `PERFIL ACTUAL: ${existingProfile || '{}'}\n\nMENSAJES NUEVOS:\n${(newMessages || []).map(m => `${m.role}: ${m.content}`).join('\n')}\n\nActualiza el perfil JSON con la información nueva relevante.`
+        }
+      ]
+    });
+    const text = result?.content?.[0]?.text?.trim();
+    if (!text) return existingProfile || '{}';
+    JSON.parse(text);
+    return text;
+  } catch (e) {
+    console.log('Profile update error:', e.message);
+    return existingProfile || '{}';
+  }
+}
+
+async function summarizeOldConversations(apiKey, messages) {
+  if (!apiKey || !Array.isArray(messages) || messages.length === 0) return '';
+  try {
+    const result = await callClaude(apiKey, {
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 400,
+      system: 'Resume esta conversación en 3-5 puntos clave, en español, de forma muy concisa. Enfócate en decisiones, tareas, información importante.',
+      messages: [{ role: 'user', content: messages.map(m => `${m.role}: ${m.content}`).join('\n') }]
+    });
+    return result?.content?.[0]?.text || '';
+  } catch (e) {
+    console.log('Summary error:', e.message);
+    return '';
+  }
+}
+
+// Sesión en memoria del servidor — guarda confirmaciones pendientes por sesión
+const pendingSessions = new Map();
+
+// Sesión servidor para confirmaciones pendientes
+
+function callN8n(webhookUrl, data) {
+  return new Promise((resolve, reject) => {
+    if (!webhookUrl) return reject(new Error('Falta webhookUrl'));
+    const body = JSON.stringify(data);
+    const u = new URL(webhookUrl);
+    const isHttps = u.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const options = {
+      hostname: u.hostname,
+      port: u.port || (isHttps ? 443 : 80),
+      path: u.pathname + (u.search || ''),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+    const req = lib.request(options, res => {
+      let b = '';
+      res.on('data', c => (b += c));
+      res.on('end', () => {
+        try {
+          // Sanitizar la respuesta de n8n antes de parsear — puede contener surrogates
+          const clean = b.replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+          let parsed = JSON.parse(clean);
+          if (res.statusCode >= 400) return reject(new Error(parsed?.message || `n8n error ${res.statusCode}`));
+          // Normalizar respuesta de n8n: puede venir como array [{json:{...}}] o como objeto directo
+          if (Array.isArray(parsed)) {
+            // n8n devuelve array de items — extraer el primer item
+            const first = parsed[0];
+            parsed = (first && first.json) ? first.json : first;
+          }
+          resolve(parsed);
+        } catch (e) {
+          if (res.statusCode >= 400) return reject(new Error(`n8n error ${res.statusCode}`));
+          resolve({ result: b });
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── Detección de intención de email ──────────────────────────────────────────
+function detectEmailIntent(text = '') {
+  const t = text.toLowerCase();
+  
+  // CRÍTICO: acciones destructivas/modificadoras primero
+  if (/\belimina\b|\bborra\b|\bquita\b|\bsuprime\b|\bborrar\b|\beliminar\b|\bpapelera\b/.test(t)) {
+    const isOng = /\bong\b|arena|asociaci[oó]n/.test(t);
+    const isTrabajo = /\btrabajo\b|colegio|azaraque|instituto/.test(t);
+    return { action: 'eliminar', account: isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal' };
+  }
+  if (/\barchiva\b|\barchivar\b/.test(t)) {
+    const isOng = /\bong\b|arena/.test(t);
+    const isTrabajo = /\btrabajo\b|colegio/.test(t);
+    return { action: 'archivar', account: isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal' };
+  }
+
+  // Detectar cuenta
+  const isOng     = /\bong\b|proyecto arena|arena educaci[oó]n|asociaci[oó]n/.test(t);
+  const isTrabajo = /\btrabajo\b|colegio|azaraque|instituto|docente|clase|alumn/.test(t);
+  const account   = isOng ? 'ong' : isTrabajo ? 'trabajo' : 'personal';
+
+  // ¿Habla de email en general?
+  const esEmail = /email|correo|mail|bandeja|inbox|mensaje.*recib|recib.*mensaje/.test(t);
+
+  // Acciones
+  // CRÍTICO: eliminar/archivar ANTES que leer para evitar falsos positivos
+  if (/elimina|eliminar|borra|borrar|suprime|suprimir|purga|papelera|quita|quitar|deshazte|mueve.*papelera/.test(t)) {
+    return { action: 'eliminar', account };
+  }
+  if (/archiva|archivar/.test(t)) {
+    return { action: 'archivar', account };
+  }
+  if (/env[íi]a|enviar|manda|mandar.*email|escribe.*email|redacta|componer|crear.*email|nuevo.*email/.test(t)) {
+    return { action: 'redactar', content: text, account };
+  }
+  if (/responde|responder|contesta|contestar|reply/.test(t)) {
+    return { action: 'responder', account };
+  }
+  if (/prioriza|priorizar|importante|urgente|organiza.*correo|organizar.*email|orden.*importancia/.test(t)) {
+    return { action: 'priorizar', account };
+  }
+  if (/busca|buscar|encuentra|encontrar|email.*de|correo.*de|email.*sobre|correo.*sobre|de parte de/.test(t)) {
+    return { action: 'buscar', query: text, account };
+  }
+  if (/lee|leer|revisar|revisa|mira|muestra|dame|dime|cu[aá]ntos|tengo.*email|tengo.*correo|correo.*nuevo|email.*nuevo|no le[íi]dos|[uú]ltimo.*correo|[uú]ltimo.*email|recientes|nuevos/.test(t)
+      || (esEmail && /qu[eé]|cu[aá]l|hay|tengo|ver|revisa|dame|dime|mira|muestra/.test(t))) {
+    return { action: 'leer', account };
+  }
+  if (/marca.*le[íi]do|marcar.*le[íi]do|marca.*no le[íi]do/.test(t)) {
+    return { action: 'marcar', markAs: /no le[íi]do/.test(t) ? 'noleido' : 'leido', account };
+  }
+  if (/en lote|todos los de|elimina.*de|archiva.*de|borra.*de/.test(t)) {
+    return { action: 'lote', loteAction: /archiva/.test(t) ? 'archivar' : 'eliminar', criteria: text, account };
+  }
+
+  // Si menciona email/correo de cualquier forma → intención de email
+  if (esEmail || isOng || isTrabajo) {
+    return { action: 'leer', account };
+  }
+
+  // Frases naturales sin palabra clave explícita pero con contexto claro
+  if (/personal|mi gmail|mi bandeja/.test(t)) {
+    return { action: 'leer', account: 'personal' };
+  }
+
+  return null;
+}
+
+// ── Detección de intención de calendario ─────────────────────────────────────
+function detectCalendarIntent(text = '') {
+  const t = text.toLowerCase();
+  if (/qu[eé] tengo|agenda|citas|reuniones|eventos|calendario|hoy|ma[nñ]ana|semana/.test(t)) {
+    return { action: 'leer' };
+  }
+  if (/crea|crear|a[nñ]ade|a[nñ]adir|pon|poner.*reuni[oó]n|poner.*cita|nueva.*reuni[oó]n/.test(t)) {
+    return { action: 'crear', content: text };
+  }
+  if (/cancela|cancelar|borra|borrar.*reuni[oó]n|elimina.*evento/.test(t)) {
+    return { action: 'eliminar', content: text };
+  }
+  return null;
+}
+
+// ── Detección de intención de crear flujo ────────────────────────────────────
+function detectCreatorIntent(text = '') {
+  const t = text.toLowerCase();
+  if (/crea un flujo|crear un flujo|crea una automatizaci[oó]n|automatiza|quiero que cuando|cada vez que.*haz|programa un flujo/.test(t)) {
+    return { descripcion: text };
+  }
+  return null;
+}
+
+// ── HTML de la app ────────────────────────────────────────────────────────────
+const APP_HTML = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Asistente">
+<title>Mi Asistente</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0f;--surface:#13131a;--surface2:#1c1c26;--border:#2a2a3a;--accent:#7c6af7;--accent2:#a78bfa;--text:#e8e8f0;--text2:#8888aa;--text3:#55556a;--record:#f43f5e;--success:#34d399;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);height:100dvh;display:flex;flex-direction:column;overflow:hidden;position:fixed;width:100%;}
+.header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;padding-top:max(16px,env(safe-area-inset-top));border-bottom:1px solid var(--border);background:var(--bg);flex-shrink:0;}
+.header-left{display:flex;align-items:center;gap:10px;}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--success);animation:pdot 2s ease-in-out infinite;flex-shrink:0;}
+.status-dot.recording{background:var(--record);animation:pdot .6s ease-in-out infinite;}
+.status-dot.thinking{background:var(--accent);}
+@keyframes pdot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.header-title{font-size:15px;font-weight:500;}
+.header-subtitle{font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;}
+.settings-btn{background:none;border:1px solid var(--border);color:var(--text2);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;}
+.settings-btn:active{background:var(--surface2);}
+.chat{flex:1;overflow-y:auto;padding:20px 16px;display:flex;flex-direction:column;gap:16px;-webkit-overflow-scrolling:touch;}
+.chat::-webkit-scrollbar{display:none;}
+.msg{display:flex;flex-direction:column;max-width:88%;animation:min .3s cubic-bezier(.34,1.56,.64,1);}
+@keyframes min{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+.msg.user{align-self:flex-end;align-items:flex-end;}
+.msg.ai{align-self:flex-start;align-items:flex-start;}
+.bubble{padding:12px 16px;border-radius:18px;font-size:15px;line-height:1.55;white-space:pre-wrap;word-break:break-word;}
+.msg.user .bubble{background:#1e1b4b;border:1px solid #312e81;border-bottom-right-radius:4px;color:#c4b5fd;}
+.msg.ai .bubble{background:var(--surface);border:1px solid var(--border);border-bottom-left-radius:4px;color:var(--text);}
+.msg-time{font-size:10px;color:var(--text3);margin-top:4px;font-family:'DM Mono',monospace;padding:0 4px;}
+.typing-indicator{display:flex;gap:4px;align-items:center;padding:14px 16px;}
+.typing-indicator span{width:6px;height:6px;background:var(--text3);border-radius:50%;animation:typ 1.2s ease-in-out infinite;}
+.typing-indicator span:nth-child(2){animation-delay:.2s}.typing-indicator span:nth-child(3){animation-delay:.4s}
+@keyframes typ{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-5px);opacity:1}}
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:12px;padding:40px 20px;text-align:center;}
+.welcome-icon{width:64px;height:64px;background:linear-gradient(135deg,var(--accent),#4f46e5);border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:8px;box-shadow:0 0 40px rgba(124,106,247,.3);}
+.welcome h2{font-size:20px;font-weight:500;}
+.welcome p{font-size:14px;color:var(--text2);max-width:280px;line-height:1.6;}
+.welcome-tips{display:flex;flex-direction:column;gap:8px;margin-top:8px;width:100%;max-width:300px;}
+.tip{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--text2);text-align:left;cursor:pointer;}
+.tip:active{background:var(--surface2);color:var(--text);}
+.input-area{padding:12px 16px;padding-bottom:max(16px,env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--border);flex-shrink:0;}
+.recording-bar{display:none;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.3);border-radius:16px;margin-bottom:10px;}
+.recording-bar.active{display:flex;}
+.rec-left{display:flex;align-items:center;gap:10px;}
+.rec-dot{width:10px;height:10px;background:var(--record);border-radius:50%;animation:pdot .7s ease-in-out infinite;flex-shrink:0;}
+.rec-text{font-size:14px;color:var(--record);font-weight:500;}
+.rec-time{font-size:13px;color:var(--record);font-family:'DM Mono',monospace;}
+.btn-stop-rec{background:var(--record);color:white;border:none;border-radius:20px;padding:8px 16px;font-size:13px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;}
+.input-row{display:flex;align-items:flex-end;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:8px 8px 8px 16px;transition:border-color .2s;}
+.input-row:focus-within{border-color:var(--accent);}
+textarea{flex:1;background:none;border:none;outline:none;color:var(--text);font-family:'DM Sans',sans-serif;font-size:15px;line-height:1.5;resize:none;max-height:120px;min-height:24px;padding:2px 0;-webkit-appearance:none;}
+textarea::placeholder{color:var(--text3);}
+.btn-voice{width:40px;height:40px;border-radius:50%;border:none;background:var(--surface2);color:var(--text2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;}
+.btn-voice.recording{background:var(--record);color:white;animation:prec 1s ease-in-out infinite;}
+@keyframes prec{0%,100%{box-shadow:0 0 0 4px rgba(244,63,94,.25)}50%{box-shadow:0 0 0 10px rgba(244,63,94,0)}}
+.btn-send{width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:white;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;}
+.btn-send:disabled{background:var(--surface2);color:var(--text3);}
+.btn-send:not(:disabled):active{transform:scale(.92);background:#6d5ce6;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px);}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:24px 24px 0 0;padding:24px 20px;padding-bottom:max(24px,env(safe-area-inset-bottom));width:100%;max-width:480px;animation:sup .35s cubic-bezier(.34,1.56,.64,1);max-height:90dvh;overflow-y:auto;}
+@keyframes sup{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal-handle{width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px;}
+.modal h3{font-size:17px;font-weight:500;margin-bottom:20px;}
+.field{margin-bottom:16px;}
+.field label{display:block;font-size:12px;color:var(--text2);font-family:'DM Mono',monospace;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;}
+.field input,.field select,.field textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none;-webkit-appearance:none;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);}
+.field select option{background:var(--surface);}
+.btn-save{width:100%;background:var(--accent);color:white;border:none;border-radius:14px;padding:16px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:500;cursor:pointer;margin-top:8px;}
+.btn-save:active{background:#6d5ce6;}
+.btn-cancel{width:100%;background:none;color:var(--text2);border:1px solid var(--border);border-radius:14px;padding:14px;font-family:'DM Sans',sans-serif;font-size:15px;cursor:pointer;margin-top:10px;}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-80px);background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 18px;border-radius:20px;font-size:13px;z-index:200;transition:transform .3s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;max-width:90vw;text-align:center;}
+.toast.show{transform:translateX(-50%) translateY(0);}
+.session-info{font-size:11px;color:var(--text3);text-align:center;padding:8px;font-family:'DM Mono',monospace;}
+.summary-bubble{background:rgba(124,106,247,.08);border:1px solid rgba(124,106,247,.2);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--text2);margin:4px 0;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="status-dot" id="statusDot"></div>
+    <div><div class="header-title">Mi Asistente</div><div class="header-subtitle" id="statusText">cargando...</div></div>
+  </div>
+  <button class="settings-btn" onclick="openSettings()">⚙️</button>
+</div>
+<div class="toast" id="toast"></div>
+<div class="chat" id="chat">
+  <div class="welcome" id="welcome">
+    <div class="welcome-icon">🤖</div>
+    <h2>Hola, soy tu asistente</h2>
+    <p>Toca 🎙️ para hablar. Recuerdo todo lo que hablamos y aprendo de ti.</p>
+    <div class="welcome-tips">
+      <div class="tip" onclick="sendQuickMsg('¿Qué recuerdas de mí?')">🧠 ¿Qué recuerdas de mí?</div>
+      <div class="tip" onclick="sendQuickMsg('Resume lo que hemos hablado')">📋 Resume lo que hemos hablado</div>
+      <div class="tip" onclick="sendQuickMsg('Ayúdame a organizar mi día')">📅 Organizar mi día</div>
+    </div>
+  </div>
+</div>
+<div class="input-area">
+  <div class="recording-bar" id="recordingBar">
+    <div class="rec-left"><div class="rec-dot"></div><span class="rec-text">Grabando...</span></div>
+    <span class="rec-time" id="recTimer">0:00</span>
+    <button class="btn-stop-rec" onclick="stopRecording()">⏹ Enviar</button>
+  </div>
+  <div class="input-row">
+    <textarea id="textInput" placeholder="Escribe un mensaje..." rows="1" oninput="autoResize(this);updateSendBtn()" onkeydown="handleKey(event)"></textarea>
+    <button class="btn-voice" id="voiceBtn" onclick="toggleRecording()">🎙️</button>
+    <button class="btn-send" id="sendBtn" onclick="sendMessage()" disabled>↑</button>
+  </div>
+</div>
+<div class="modal-overlay" id="modalOverlay" onclick="handleOverlayClick(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>⚙️ Configuración</h3>
+    <div class="field"><label>API Key de Anthropic (Claude)</label><input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>API Key de OpenAI (voz)</label><input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>Sobre ti (contexto base)</label><textarea id="systemPrompt" rows="4" style="resize:none">Eres mi asistente personal inteligente. Me llamo Adrián. Soy profesor, tengo una ONG y trabajo como SEO freelance. Eres directo, práctico, proactivo. Siempre en español. Cuando no puedas hacer algo, dime qué necesitarías.</textarea></div>
+    <div class="field"><label>Velocidad de respuesta</label><select id="modelSelect"><option value="claude-haiku-4-5-20251001">Rápido (Haiku) — recomendado para voz</option><option value="claude-sonnet-4-6">Inteligente (Sonnet)</option></select></div>
+    <div class="field"><label>Voz</label><select id="voiceSelect"><option value="nova">Nova — clara (recomendada)</option><option value="alloy">Alloy — neutra</option><option value="echo">Echo — masculina</option><option value="fable">Fable — expresiva</option><option value="onyx">Onyx — grave</option><option value="shimmer">Shimmer — suave</option></select></div>
+    <div class="field"><label>Responder por voz</label><select id="alwaysSpeak"><option value="match">Solo si yo hablo</option><option value="voice">Siempre</option><option value="never">Nunca</option></select></div>
+    <div class="field"><label>N8n — Gmail Personal</label><input type="text" id="n8nGmailPersonalUrl" placeholder="https://TU-N8N.up.railway.app/webhook/86651dd0-dec6-4828-afbe-561d76c3ea16-pro" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n — Gmail ONG</label><input type="text" id="n8nGmailOngUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/gmail-ong" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n — Google Calendar</label><input type="text" id="n8nCalendarUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/calendar" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n — Gmail Trabajo</label><input type="text" id="n8nGmailTrabajoUrl" placeholder="https://n8n-production-893e.up.railway.app/webhook/2a25acc6-56d8-4cf5-ad21-7628b4e6360a" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n API Key</label><input type="password" id="n8nApiKey" placeholder="tu-api-key-de-n8n" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>N8n Base URL</label><input type="text" id="n8nBaseUrl" placeholder="https://n8n-production-893e.up.railway.app" autocomplete="off" spellcheck="false"></div>
+    <button class="btn-save" onclick="saveSettings()">✅ Guardar</button>
+    <button class="btn-cancel" onclick="closeSettings()">Cancelar</button>
+  </div>
+</div>
+<script>
+const SESSION_ID='s_'+Date.now()+'_'+Math.random().toString(36).substr(2,9);
+let config={
+  claudeKey:'',openaiKey:'',
+  systemPrompt:document.getElementById('systemPrompt').value,
+  voice:'nova',alwaysSpeak:'match',model:'claude-haiku-4-5-20251001',
+  n8nGmailPersonalUrl:'',n8nGmailOngUrl:'',n8nCalendarUrl:'',
+  n8nCreatorUrl:'https://n8n-production-893e.up.railway.app/webhook/agente-creador',
+  n8nGmailTrabajoUrl:'',n8nApiKey:'',
+  n8nBaseUrl:'https://n8n-production-893e.up.railway.app'
+};
+let messages=[],mediaRecorder=null,audioChunks=[],isRecording=false,isProcessing=false,
+    currentAudio=null,recInterval=null,recSeconds=0,lastInputWasVoice=false,
+    audioCtx=null,userProfile='{}',pendingConfirmAction=null,pendingConfirmQuery=null,pendingConfirmEmailId=null;
+
+function unlockAudio(){
+  if(audioCtx)return;
+  try{
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    const buf=audioCtx.createBuffer(1,1,22050);
+    const src=audioCtx.createBufferSource();
+    src.buffer=buf;src.connect(audioCtx.destination);src.start(0);
+  }catch(e){}
+}
+
+async function init(){
+  loadConfig();
+  await loadProfileAndHistory();
+  setStatus('listo');
+  if(!config.claudeKey)setTimeout(()=>{showToast('👆 Toca ⚙️ para añadir tus claves');openSettings();},800);
+}
+
+function loadConfig(){
+  try{
+    const s=JSON.parse(localStorage.getItem('asistente_config')||'{}');
+    config={...config,...s};
+    document.getElementById('claudeKey').value=config.claudeKey||'';
+    document.getElementById('openaiKey').value=config.openaiKey||'';
+    document.getElementById('systemPrompt').value=config.systemPrompt;
+    document.getElementById('voiceSelect').value=config.voice||'nova';
+    document.getElementById('alwaysSpeak').value=config.alwaysSpeak||'match';
+    document.getElementById('modelSelect').value=config.model||'claude-haiku-4-5-20251001';
+    document.getElementById('n8nGmailPersonalUrl').value=config.n8nGmailPersonalUrl||'';
+    document.getElementById('n8nGmailOngUrl').value=config.n8nGmailOngUrl||'';
+    document.getElementById('n8nCalendarUrl').value=config.n8nCalendarUrl||'';
+    document.getElementById('n8nGmailTrabajoUrl').value=config.n8nGmailTrabajoUrl||'';
+    document.getElementById('n8nApiKey').value=config.n8nApiKey||'';
+    document.getElementById('n8nBaseUrl').value=config.n8nBaseUrl||'https://n8n-production-893e.up.railway.app';
+  }catch(e){}
+}
+
+async function loadProfileAndHistory(){
+  try{
+    setStatus('cargando memoria...');
+    const mkTimeout=()=>new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),5000));
+    const pr=await Promise.race([fetch('/api/profile'),mkTimeout()]);
+    const pd=await pr.json();
+    if(pd.profile)userProfile=pd.profile;
+    const hr=await Promise.race([fetch('/api/history?limit=50'),mkTimeout()]);
+    const hd=await hr.json();
+    if(hd.messages&&hd.messages.length>0){
+      hideWelcome();
+      if(hd.messages.length>20&&hd.summary){
+        const sum=document.createElement('div');
+        sum.className='session-info';
+        sum.innerHTML='<div class="summary-bubble">📝 Resumen de conversaciones anteriores:<br>'+escapeHtml(hd.summary)+'</div>';
+        document.getElementById('chat').appendChild(sum);
+        hd.messages.slice(-20).forEach(m=>{addMessageToDOM(m.role,m.content,m.created_at,false);messages.push({role:m.role,content:m.content});});
+      }else{
+        hd.messages.forEach(m=>{addMessageToDOM(m.role,m.content,m.created_at,false);messages.push({role:m.role,content:m.content});});
+      }
+      const info=document.createElement('div');
+      info.className='session-info';
+      info.textContent='↑ '+hd.messages.length+' mensajes recuperados';
+      document.getElementById('chat').insertBefore(info,document.getElementById('chat').firstChild);
+      scrollToBottom();
+    }
+  }catch(e){console.log('Sin historial o timeout:',e.message);}
+}
+
+function saveSettings(){
+  config.claudeKey=document.getElementById('claudeKey').value.trim();
+  config.openaiKey=document.getElementById('openaiKey').value.trim();
+  config.systemPrompt=document.getElementById('systemPrompt').value.trim();
+  config.voice=document.getElementById('voiceSelect').value;
+  config.alwaysSpeak=document.getElementById('alwaysSpeak').value;
+  config.model=document.getElementById('modelSelect').value;
+  config.n8nGmailPersonalUrl=document.getElementById('n8nGmailPersonalUrl').value.trim();
+  config.n8nGmailOngUrl=document.getElementById('n8nGmailOngUrl').value.trim();
+  config.n8nCalendarUrl=document.getElementById('n8nCalendarUrl').value.trim();
+  config.n8nGmailTrabajoUrl=document.getElementById('n8nGmailTrabajoUrl').value.trim();
+  config.n8nApiKey=document.getElementById('n8nApiKey').value.trim();
+  config.n8nBaseUrl=document.getElementById('n8nBaseUrl').value.trim()||'https://n8n-production-893e.up.railway.app';
+  localStorage.setItem('asistente_config',JSON.stringify(config));
+  closeSettings();showToast('✅ Guardado');setStatus('listo');
+}
+function openSettings(){document.getElementById('modalOverlay').classList.add('open');}
+function closeSettings(){document.getElementById('modalOverlay').classList.remove('open');}
+function handleOverlayClick(e){if(e.target===document.getElementById('modalOverlay'))closeSettings();}
+function setStatus(t,type){document.getElementById('statusText').textContent=t;document.getElementById('statusDot').className='status-dot'+(type?' '+type:'');}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
+function updateSendBtn(){document.getElementById('sendBtn').disabled=!document.getElementById('textInput').value.trim()||isProcessing;}
+function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!document.getElementById('sendBtn').disabled)sendMessage();}}
+function scrollToBottom(){const c=document.getElementById('chat');setTimeout(()=>c.scrollTo({top:c.scrollHeight,behavior:'smooth'}),50);}
+function getTime(d){if(d)return new Date(d).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});return new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}
+function hideWelcome(){const w=document.getElementById('welcome');if(w)w.remove();}
+function escapeHtml(t){return String(t).replace(/&/g,'&amp;').replace(/[<]/g,'&lt;').replace(/[>]/g,'&gt;').replace(/\\n/g,'<br>');}
+
+function addMessageToDOM(role,text,dateStr,animate){
+  hideWelcome();
+  const chat=document.getElementById('chat');
+  const div=document.createElement('div');
+  div.className='msg '+role;
+  if(animate===false)div.style.animation='none';
+  div.innerHTML='<div class="bubble">'+escapeHtml(text)+'</div><div class="msg-time">'+getTime(dateStr)+'</div>';
+  chat.appendChild(div);
+  if(animate!==false)scrollToBottom();
+  return div;
+}
+
+function addTyping(){
+  hideWelcome();
+  const div=document.createElement('div');
+  div.className='msg ai';div.id='typing';
+  div.innerHTML='<div class="bubble"><div class="typing-indicator"><span></span><span></span><span></span></div></div>';
+  document.getElementById('chat').appendChild(div);
+  scrollToBottom();
+}
+function removeTyping(){const t=document.getElementById('typing');if(t)t.remove();}
+
+function addAIMessage(text,audioBlob){
+  removeTyping();
+  const div=document.createElement('div');
+  div.className='msg ai';
+  let btn='';
+  if(audioBlob){
+    const u=URL.createObjectURL(audioBlob);
+    btn='<br><button data-audiobtn="1" style="display:block;width:100%;margin-top:12px;padding:18px 20px;background:#7c6af7;color:white;border:none;border-radius:16px;font-size:18px;font-weight:600;cursor:pointer;text-align:center;" onclick="playAudio(\\''+u+'\\',this)">▶ Escuchar respuesta</button>';
+  }
+  div.innerHTML='<div class="bubble">'+escapeHtml(text)+btn+'</div><div class="msg-time">'+getTime()+'</div>';
+  document.getElementById('chat').appendChild(div);
+  scrollToBottom();
+  if(audioBlob)autoPlayAudio(audioBlob);
+}
+
+function playAudio(u,btn){
+  if(currentAudio&&currentAudio.pause)currentAudio.pause();
+  document.querySelectorAll('[data-audiobtn]').forEach(b=>{b.style.background='#7c6af7';b.textContent='▶ Escuchar respuesta';});
+  currentAudio=new Audio(u);currentAudio.playsInline=true;
+  btn.style.background='#1d9e75';btn.textContent='⏸ Reproduciendo...';
+  currentAudio.play().catch(()=>{btn.textContent='▶ Escuchar respuesta';});
+  currentAudio.onended=()=>{btn.style.background='#7c6af7';btn.textContent='▶ Escuchar respuesta';};
+}
+
+async function autoPlayAudio(blob){
+  if(currentAudio&&currentAudio.pause)currentAudio.pause();
+  if(audioCtx&&audioCtx.state!=='suspended'){
+    try{
+      const ab=await blob.arrayBuffer();
+      const audioBuf=await audioCtx.decodeAudioData(ab);
+      const src=audioCtx.createBufferSource();
+      src.buffer=audioBuf;src.connect(audioCtx.destination);src.start(0);
+      currentAudio={pause:()=>{try{src.stop();}catch(e){}}};
+      return;
+    }catch(e){console.log('AudioCtx err:',e);}
+  }
+  const audio=new Audio(URL.createObjectURL(blob));
+  audio.playsInline=true;currentAudio=audio;
+  audio.play().catch(()=>showToast('Toca ▶ para escuchar la respuesta'));
+}
+
+async function saveMessage(role,content){
+  try{
+    await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({role,content,session_id:SESSION_ID,claudeKey:config.claudeKey})});
+  }catch(e){}
+}
+
+async function sendMessage(){
+  const input=document.getElementById('textInput');
+  const text=input.value.trim();
+  if(!text||isProcessing)return;
+  if(!config.claudeKey){showToast('⚠️ Añade tu API Key en ⚙️');openSettings();return;}
+  input.value='';input.style.height='auto';updateSendBtn();lastInputWasVoice=false;
+  addMessageToDOM('user',text,null,true);
+  await saveMessage('user',text);
+  await processMessage(text);
+}
+
+function sendQuickMsg(text){document.getElementById('textInput').value=text;updateSendBtn();sendMessage();}
+
+async function toggleRecording(){
+  if(isProcessing)return;
+  if(isRecording){stopRecording();return;}
+  if(!config.openaiKey){showToast('⚠️ Añade tu API Key de OpenAI en ⚙️');openSettings();return;}
+  unlockAudio();
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    audioChunks=[];
+    mediaRecorder=new MediaRecorder(stream,{mimeType:getSupportedMimeType()});
+    mediaRecorder.ondataavailable=e=>{if(e.data.size>0)audioChunks.push(e.data);};
+    mediaRecorder.start(100);isRecording=true;
+    document.getElementById('voiceBtn').classList.add('recording');
+    document.getElementById('recordingBar').classList.add('active');
+    setStatus('grabando...','recording');recSeconds=0;
+    document.getElementById('recTimer').textContent='0:00';
+    recInterval=setInterval(()=>{recSeconds++;const m=Math.floor(recSeconds/60),s=recSeconds%60;document.getElementById('recTimer').textContent=m+':'+(s<10?'0':'')+s;},1000);
+  }catch(err){showToast('❌ Sin acceso al micrófono');setStatus('listo');}
+}
+
+async function stopRecording(){
+  if(!isRecording||!mediaRecorder)return;
+  isRecording=false;clearInterval(recInterval);
+  document.getElementById('voiceBtn').classList.remove('recording');
+  document.getElementById('recordingBar').classList.remove('active');
+  setStatus('procesando...');
+  try{
+    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    const s=audioCtx.createBuffer(1,audioCtx.sampleRate*0.1,audioCtx.sampleRate);
+    const n=audioCtx.createBufferSource();n.buffer=s;n.connect(audioCtx.destination);n.start(0);
+  }catch(e){}
+  mediaRecorder.stop();mediaRecorder.stream.getTracks().forEach(t=>t.stop());
+  mediaRecorder.onstop=async()=>{
+    const blob=new Blob(audioChunks,{type:getSupportedMimeType()});
+    if(blob.size<500||recSeconds<1){showToast('Grabación muy corta');setStatus('listo');return;}
+    setStatus('transcribiendo...');
+    const transcript=await transcribeAudio(blob);
+    if(transcript){lastInputWasVoice=true;addMessageToDOM('user',transcript,null,true);await saveMessage('user',transcript);await processMessage(transcript);}
+    else{setStatus('listo');}
+  };
+}
+
+function getSupportedMimeType(){
+  for(const t of['audio/webm','audio/mp4','audio/ogg','audio/wav']){if(MediaRecorder.isTypeSupported(t))return t;}
+  return 'audio/webm';
+}
+
+async function transcribeAudio(blob){
+  const ext=blob.type.includes('mp4')?'mp4':blob.type.includes('ogg')?'ogg':blob.type.includes('wav')?'wav':'webm';
+  const fd=new FormData();fd.append('file',blob,'audio.'+ext);fd.append('openaiKey',config.openaiKey);
+  try{
+    const res=await fetch('/api/transcribe',{method:'POST',body:fd});
+    const data=await res.json();
+    if(data.text)return data.text.trim();
+    showToast('❌ Error al transcribir');return null;
+  }catch(e){showToast('❌ Error de conexión');return null;}
+}
+
+function buildSystemPrompt(){
+  let sys=config.systemPrompt;
+  if(userProfile&&userProfile!=='{}'){
+    try{const p=JSON.parse(userProfile);sys+='\\n\\nLO QUE SÉ DE TI:\\n'+Object.entries(p).map(([k,v])=>k+': '+v).join('\\n');}catch(e){}
+  }
+  return sys;
+}
+
+async function processMessage(userText){
+  isProcessing=true;document.getElementById('sendBtn').disabled=true;
+  setStatus('pensando...','thinking');addTyping();
+  messages.push({role:'user',content:userText});
+  try{
+    const res=await fetch('/api/chat',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        claudeKey:config.claudeKey,systemPrompt:buildSystemPrompt(),
+        messages:messages.slice(-20),model:config.model||'claude-haiku-4-5-20251001',
+        n8nGmailPersonalUrl:config.n8nGmailPersonalUrl||'',
+        n8nGmailOngUrl:config.n8nGmailOngUrl||'',
+        n8nCalendarUrl:config.n8nCalendarUrl||'',
+        n8nGmailTrabajoUrl:config.n8nGmailTrabajoUrl||'',
+        n8nCreatorUrl:config.n8nCreatorUrl||'',
+        n8nApiKey:config.n8nApiKey||'',
+        n8nBaseUrl:config.n8nBaseUrl||'',
+        pendingAction:pendingConfirmAction||null,
+        pendingQuery:pendingConfirmQuery||null,
+        pendingEmailId:pendingConfirmEmailId||null,
+        sessionId:SESSION_ID,
+        sessionId:SESSION_ID
+      })
+    });
+    const data=await res.json();
+    if(data.content?.[0]){
+      const reply=data.content[0].text;
+      messages.push({role:'assistant',content:reply});
+      await saveMessage('assistant',reply);
+      pendingConfirmAction=data._pendingAction||null;
+      pendingConfirmQuery=data._pendingQuery||null;
+      pendingConfirmEmailId=data._pendingEmailId||null;
+      if(messages.length%5===0)updateProfileBackground();
+      const shouldSpeak=config.alwaysSpeak==='voice'||(config.alwaysSpeak==='match'&&lastInputWasVoice);
+      if(shouldSpeak&&config.openaiKey){setStatus('generando voz...');const ab=await getTTS(reply);addAIMessage(reply,ab);}
+      else{addAIMessage(reply,null);}
+      setStatus('listo');
+    }else{
+      removeTyping();showToast('❌ '+(data.error?.message||'Error. Revisa tu API Key.'));setStatus('error');
+    }
+  }catch(e){removeTyping();showToast('❌ Error de conexión');setStatus('error');}
+  isProcessing=false;updateSendBtn();
+}
+
+async function updateProfileBackground(){
+  try{
+    const recent=messages.slice(-10);
+    const res=await fetch('/api/profile/update',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({claudeKey:config.claudeKey,messages:recent,currentProfile:userProfile})});
+    const data=await res.json();if(data.profile)userProfile=data.profile;
+  }catch(e){}
+}
+
+async function getTTS(text){
+  try{
+    const res=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({openaiKey:config.openaiKey,text:text.substring(0,4000),voice:config.voice||'nova'})});
+    if(res.ok)return await res.blob();return null;
+  }catch(e){return null;}
+}
+
+init();
+</script>
+</body>
+</html>`;
+
+// ── Servidor HTTP ─────────────────────────────────────────────────────────────
+const server = http.createServer(async (req, res) => {
+  const parsed = url.parse(req.url, true);
+  const path = parsed.pathname;
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    return res.end();
+  }
+
+  try {
+    if (req.method === 'GET' && path === '/') return sendHTML(res, APP_HTML);
+
+    if (req.method === 'GET' && path === '/api/history') {
+      const limit = parseInt(parsed.query.limit, 10) || 50;
+      const result = await pool.query(
+        'SELECT role, content, created_at FROM conversations ORDER BY created_at DESC LIMIT $1',
+        [limit]
+      );
+      const msgs = result.rows.reverse();
+      let summary = null;
+      if (msgs.length > 20) {
+        const summaryRow = await pool.query("SELECT value FROM memory WHERE key='conversation_summary'");
+        summary = summaryRow.rows[0]?.value || null;
+      }
+      return sendJSON(res, 200, { messages: msgs, summary });
+    }
+
+    if (req.method === 'POST' && path === '/api/messages') {
+      const body = await parseBody(req);
+      if (!body.role || !body.content) return sendJSON(res, 400, { error: 'role y content son obligatorios' });
+      await pool.query(
+        'INSERT INTO conversations (session_id, role, content) VALUES ($1, $2, $3)',
+        [body.session_id || 'default', body.role, body.content]
+      );
+      const count = await pool.query('SELECT COUNT(*) FROM conversations');
+      if (parseInt(count.rows[0].count, 10) % 20 === 0 && body.claudeKey) {
+        pool.query('SELECT role, content FROM conversations ORDER BY created_at DESC LIMIT 40 OFFSET 20')
+          .then(async r => {
+            if (r.rows.length > 0) {
+              const sum = await summarizeOldConversations(body.claudeKey, r.rows);
+              if (sum) {
+                await pool.query(
+                  `INSERT INTO memory (key, value, updated_at) VALUES ('conversation_summary', $1, NOW())
+                   ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+                  [sum]
+                );
+              }
+            }
+          })
+          .catch(err => console.log('Summary background error:', err.message));
+      }
+      return sendJSON(res, 200, { ok: true });
+    }
+
+    if (req.method === 'GET' && path === '/api/profile') {
+      const result = await pool.query('SELECT data FROM profile ORDER BY updated_at DESC LIMIT 1');
+      return sendJSON(res, 200, { profile: result.rows[0]?.data || null });
+    }
+
+    if (req.method === 'POST' && path === '/api/profile/update') {
+      const body = await parseBody(req);
+      const newProfile = await updateProfile(body.claudeKey, body.messages || [], body.currentProfile);
+      await pool.query('DELETE FROM profile');
+      await pool.query('INSERT INTO profile (data) VALUES ($1)', [newProfile || '{}']);
+      return sendJSON(res, 200, { profile: newProfile || '{}' });
+    }
+
+    if (req.method === 'POST' && path === '/api/chat') {
+      const body = await parseBody(req);
+      if (!body.claudeKey) return sendJSON(res, 400, { error: 'Falta claudeKey' });
+      if (!Array.isArray(body.messages) || body.messages.length === 0) return sendJSON(res, 400, { error: 'messages es obligatorio' });
+
+      const lastMsg = body.messages[body.messages.length - 1]?.content || '';
+
+      // ── Gmail / N8N ───────────────────────────────────────────────────────
+      const sanitize = (s) => String(s || '').replace(/[\uD800-\uDFFF]/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').substring(0, 2000);
+
+      const emailIntent = detectEmailIntent(lastMsg);
+      const sessionId = body.sessionId || 'default';
+      const serverSession = pendingSessions.get(sessionId) || {};
+      
+      // Leer pending del servidor (más fiable que el frontend)
+      const pendingAction  = body.pendingAction  || serverSession.pendingAction  || null;
+      const pendingQuery   = body.pendingQuery   || serverSession.pendingQuery   || null;
+      const pendingEmailId = body.pendingEmailId || serverSession.pendingEmailId || null;
+
+      // Detectar confirmación
+      const isConfirmation = /^(s[ií]|yes|ok|confirma|procede|dale|hazlo|adelante|venga)/i.test(lastMsg.trim())
+        || /confirma|procede|ejecuta/i.test(lastMsg.trim());
+
+      const hasGmailUrls = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
+
+      console.log('DEBUG chat:', JSON.stringify({
+        lastMsg: lastMsg.substring(0, 80),
+        emailIntent: emailIntent ? emailIntent.action : null,
+        isConfirmation,
+        pendingAction,
+        pendingEmailId,
+        hasGmailUrls: !!hasGmailUrls
+      }));
+
+      console.log('\n═══ PASO 1: ¿Llamar a n8n? ═══');
+      console.log('  emailIntent:', emailIntent ? emailIntent.action : null);
+      console.log('  isConfirmation:', isConfirmation);
+      console.log('  pendingAction (servidor):', pendingAction);
+      console.log('  pendingEmailId (servidor):', pendingEmailId);
+      console.log('  hasGmailUrls:', !!hasGmailUrls);
+      console.log('  sessionId:', sessionId);
+      console.log('  serverSession:', JSON.stringify(serverSession));
+
+      if (hasGmailUrls && (emailIntent || (isConfirmation && pendingAction))) {
+        const account = emailIntent?.account || serverSession.account || 'personal';
+        let webhookUrl;
+        if (account === 'ong' && body.n8nGmailOngUrl)           webhookUrl = body.n8nGmailOngUrl;
+        else if (account === 'trabajo' && body.n8nGmailTrabajoUrl) webhookUrl = body.n8nGmailTrabajoUrl;
+        else webhookUrl = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
+
+        let n8nPayload;
+        if (isConfirmation && pendingAction) {
+          n8nPayload = {
+            text: sanitize(lastMsg),
+            confirmed: true,
+            emailId: pendingEmailId || '',
+            query: pendingQuery || '',
+            autoSend: false,
+            account
+          };
+          console.log('\n═══ PASO 2: Enviando CONFIRMACIÓN a n8n ═══');
+          console.log('  payload:', JSON.stringify(n8nPayload));
+        } else {
+          n8nPayload = {
+            text: sanitize(lastMsg),
+            autoSend: false,
+            account,
+            confirmed: false
+          };
+          console.log('\n═══ PASO 2: Enviando petición NUEVA a n8n ═══');
+          console.log('  payload:', JSON.stringify(n8nPayload));
+        }
+
+        try {
+          const n8nResult = await callN8n(webhookUrl, n8nPayload);
+          console.log('\n═══ PASO 3: Respuesta de n8n ═══');
+          console.log('  n8nResult completo:', JSON.stringify(n8nResult).substring(0, 500));
+          console.log('  needsConfirmation:', n8nResult.needsConfirmation);
+          console.log('  pendingAction:', n8nResult.pendingAction);
+          console.log('  pendingEmailId:', n8nResult.pendingEmailId);
+          console.log('  success:', n8nResult.success);
+          console.log('  action:', n8nResult.action);
+
+          if (n8nResult) {
+            const hasPending = n8nResult.needsConfirmation === true;
+            
+            console.log('\n═══ PASO 4: hasPending =', hasPending, '═══');
+            
+            if (hasPending) {
+              pendingSessions.set(sessionId, {
+                pendingAction:  n8nResult.pendingAction  || 'eliminar_uno',
+                pendingQuery:   n8nResult.pendingQuery   || '',
+                pendingEmailId: n8nResult.pendingEmailId || '',
+                account
+              });
+              setTimeout(() => pendingSessions.delete(sessionId), 10 * 60 * 1000);
+              console.log('  ✅ Sesión guardada:', JSON.stringify(pendingSessions.get(sessionId)));
+            } else if (isConfirmation) {
+              pendingSessions.delete(sessionId);
+              console.log('  🗑️ Sesión limpiada tras ejecución');
+            } else {
+              console.log('  ℹ️ Sin pending — acción normal completada');
+            }
+
+            const safeSystem = sanitize(body.systemPrompt || '');
+            const formatted = await callClaude(body.claudeKey, {
+              model: body.model || 'claude-haiku-4-5-20251001',
+              max_tokens: 1200,
+              system: safeSystem + `
+
+Eres un asistente que presenta resultados de acciones sobre el email.
+Reglas:
+- Si hay emails → preséntalo limpio, legible, en español
+- Si needsConfirmation=true → muestra el preview y pide confirmación con "sí, confirma"
+- Si se ejecutó una acción → confirma qué se hizo
+- Si hay un borrador → muéstralo y pregunta si quiere enviarlo
+- Sé directo y conciso.`,
+              messages: [{
+                role: 'user',
+                content: 'Petición: ' + sanitize(lastMsg) + '\n\nResultado:\n' + JSON.stringify(n8nResult).substring(0, 4000)
+              }]
+            });
+
+            const finalResponse = JSON.parse(JSON.stringify(formatted));
+            if (hasPending) {
+              finalResponse._pendingAction  = n8nResult.pendingAction  || 'eliminar_uno';
+              finalResponse._pendingQuery   = n8nResult.pendingQuery   || '';
+              finalResponse._pendingEmailId = n8nResult.pendingEmailId || '';
+            }
+
+            console.log('Sent to frontend:', { hasPending, pendingEmailId: finalResponse._pendingEmailId });
+            return sendJSON(res, 200, finalResponse);
+          }
+        } catch (e) {
+          console.log('N8N Gmail error:', e.message);
+        }
+      }
+
+      // ── Calendar ──────────────────────────────────────────────────────────
+      const calendarIntent = detectCalendarIntent(lastMsg);
+      if (calendarIntent && body.n8nCalendarUrl) {
+        try {
+          const n8nResult = await callN8n(body.n8nCalendarUrl, calendarIntent);
+          if (n8nResult.result) {
+            const formattedResult = await callClaude(body.claudeKey, {
+              model: body.model || 'claude-haiku-4-5-20251001',
+              max_tokens: 1024,
+              system: (body.systemPrompt || '') + '\n\nSe te proporciona información de Google Calendar. Preséntala de forma natural y útil en español.',
+              messages: [...body.messages.slice(-10), { role: 'user', content: 'Datos de Calendar: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }]
+            });
+            return sendJSON(res, 200, formattedResult);
+          }
+        } catch (e) {
+          console.log('Calendar N8n error:', e.message);
+        }
+      }
+
+      // ── Creator ───────────────────────────────────────────────────────────
+      const creatorIntent = detectCreatorIntent(lastMsg);
+      if (creatorIntent && body.n8nCreatorUrl) {
+        try {
+          const creatorPayload = {
+            descripcion: creatorIntent.descripcion,
+            claudeKey: body.claudeKey,
+            n8nApiKey: body.n8nApiKey,
+            n8nBaseUrl: body.n8nBaseUrl,
+            gmailPersonalId: 'rbWXlxnCksIz0CGT',
+            gmailOngId: '6mzgNDRrVjdcFxeW',
+            calendarId: 'HvELZK69w31VzDgn',
+            anthropicId: 'MRjeQ5orOy0YoqbT'
+          };
+          const n8nResult = await callN8n(body.n8nCreatorUrl, creatorPayload);
+          if (n8nResult.result) {
+            const formattedResult = await callClaude(body.claudeKey, {
+              model: body.model || 'claude-haiku-4-5-20251001',
+              max_tokens: 512,
+              system: body.systemPrompt || '',
+              messages: [...body.messages.slice(-5), { role: 'user', content: 'Resultado de crear flujo: ' + JSON.stringify(n8nResult.result).substring(0, 3000) }]
+            });
+            return sendJSON(res, 200, formattedResult);
+          }
+        } catch (e) {
+          console.log('Creator N8n error:', e.message);
+        }
+      }
+
+      // ── Claude directo ────────────────────────────────────────────────────
+      const result = await callClaude(body.claudeKey, {
+        model: body.model || 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: body.systemPrompt || '',
+        messages: body.messages
+      });
+      return sendJSON(res, 200, result);
+    }
+
+    if (req.method === 'POST' && path === '/api/transcribe') {
+      const parts = await parseMultipart(req);
+      const apiKey = parts.openaiKey?.data?.toString().trim();
+      const audio = parts.file;
+      if (!audio || !apiKey) return sendJSON(res, 400, { error: 'Missing data' });
+      const result = await callWhisper(apiKey, audio.data, audio.contentType, audio.filename || 'audio.webm');
+      return sendJSON(res, 200, result);
+    }
+
+    if (req.method === 'POST' && path === '/api/tts') {
+      const body = await parseBody(req);
+      if (!body.openaiKey || !body.text) return sendJSON(res, 400, { error: 'Faltan datos para TTS' });
+      const result = await callOpenAI('/v1/audio/speech', body.openaiKey, { model: 'tts-1', input: body.text, voice: body.voice || 'nova' }, true);
+      res.writeHead(200, { 'Content-Type': result.contentType || 'audio/mpeg', 'Access-Control-Allow-Origin': '*' });
+      return res.end(result.buffer);
+    }
+
+    if (req.method === 'POST' && path === '/api/summarize') {
+      const body = await parseBody(req);
+      const summary = await summarizeOldConversations(body.claudeKey, body.messages || []);
+      return sendJSON(res, 200, { summary });
+    }
+
+    return sendJSON(res, 404, { error: 'Not found' });
+
+  } catch (err) {
+    console.error('Error:', err);
+    return sendJSON(res, 500, { error: err.message });
+  }
+});
+
+initDB()
+  .then(() => server.listen(PORT, () => console.log('🚀 Puerto', PORT)))
+  .catch(err => { console.error('❌ DB error:', err); process.exit(1); });
