@@ -968,6 +968,11 @@ const server = http.createServer(async (req, res) => {
           console.log('  payload:', JSON.stringify(n8nPayload));
         } else {
           // ── PETICIÓN NUEVA ────────────────────────────────────────────────
+          // Si hay sesión pendiente pero el usuario hace una petición nueva, la limpiamos
+          if (pendingAction && emailIntent) {
+            pendingSessions.delete(sessionId);
+            console.log('  🗑️ Sesión pendiente limpiada por nueva petición de email');
+          }
           n8nPayload = {
             text: sanitize(lastMsg),
             autoSend: false,
