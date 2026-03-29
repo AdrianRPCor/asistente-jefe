@@ -960,7 +960,8 @@ const server = http.createServer(async (req, res) => {
             confirmed: true,
             emailId: pendingEmailId || '',
             query: pendingQuery   || '',
-            action: pendingAction,        // ← CLAVE: informa a n8n qué acción confirmar
+            action: pendingAction,
+            limit: serverSession.pendingLimit || null,
             autoSend: false,
             account
           };
@@ -1002,6 +1003,7 @@ const server = http.createServer(async (req, res) => {
                 pendingAction:  n8nResult.pendingAction  || 'eliminar_uno',
                 pendingQuery:   n8nResult.pendingQuery   || '',
                 pendingEmailId: n8nResult.pendingEmailId || '',
+                pendingLimit:   n8nResult.pendingLimit   || null,
                 account
               });
               // Auto-expirar en 10 minutos
