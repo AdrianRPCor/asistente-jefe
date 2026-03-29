@@ -1071,13 +1071,16 @@ const server = http.createServer(async (req, res) => {
               max_tokens: 1200,
               system: safeSystem + `
 
+Fecha y hora actual: ${new Date().toLocaleString('es-ES', {timeZone:'Europe/Madrid', weekday:'long', year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit'})}.
+
 Eres un asistente que presenta resultados de acciones sobre el email.
 Reglas:
-- Si hay emails → preséntalo limpio, legible, en español
-- Si needsConfirmation=true → muestra el preview y pide confirmación con "sí, confirma"
-- Si se ejecutó una acción → confirma qué se hizo
+- Si hay emails → preséntalo limpio, legible, en español. Muestra remitente, asunto y fecha.
+- La fecha actual es HOY — no confundas con fechas de los emails
+- Si needsConfirmation=true → muestra el preview del email y pide confirmación simple: "¿Confirmas? Responde sí"
+- Si se ejecutó una acción → confirma brevemente qué se hizo
 - Si hay un borrador → muéstralo y pregunta si quiere enviarlo
-- Sé directo y conciso.`,
+- Sé directo y conciso. Sin markdown excesivo.`,
               messages: [{
                 role: 'user',
                 content: 'Petición: ' + sanitize(lastMsg) + '\n\nResultado:\n' + JSON.stringify(n8nResult).substring(0, 4000)
@@ -1148,10 +1151,11 @@ Reglas:
       }
 
       // ── Claude directo ────────────────────────────────────────────────────
+      const nowStr = new Date().toLocaleString('es-ES', {timeZone:'Europe/Madrid', weekday:'long', year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit'});
       const result = await callClaude(body.claudeKey, {
         model: body.model || 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
-        system: body.systemPrompt || '',
+        system: (body.systemPrompt || '') + '\n\nFecha y hora actual: ' + nowStr + '.',
         messages: body.messages
       });
       return sendJSON(res, 200, result);
