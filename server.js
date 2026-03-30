@@ -306,7 +306,7 @@ async function summarizeOldConversations(apiKey, messages) {
 }
 
 // ── Sesiones pendientes (en memoria del servidor) ─────────────────────────────
-// Estructura: { pendingAction, pendingQuery, pendingEmailId, account }
+// Estructura: { pendingAction, pendingQuery, pendingEmailId, account, lastEmailsContext }
 const pendingSessions = new Map();
 
 // ── Detección de intenciones ──────────────────────────────────────────────────
@@ -371,6 +371,20 @@ function detectCreatorIntent(text = '') {
     return { descripcion: text };
   }
   return null;
+}
+
+// ── Detectar si el mensaje hace referencia a emails previos sin nueva búsqueda ──
+function isReferringToPreviousEmails(text = '') {
+  const t = text.toLowerCase();
+  // Patrones que indican referencia a algo ya mostrado
+  return (
+    /ese (correo|email|mensaje)|este (correo|email|mensaje)/.test(t) ||
+    /el (correo|email|mensaje) (que|de|del|número|#)/.test(t) ||
+    /correo [0-9]|email [0-9]|el [0-9][\.\)]/.test(t) ||
+    /el de (proyecto|laura|diana|amazon|just eat|piensa|mercury|lucera|sergio|eduardo|aliexpress)/.test(t) ||
+    /responde.*ese|contesta.*ese|ese.*responde/.test(t) ||
+    /el (primero|segundo|tercero|último|anterior|de arriba|de abajo)/.test(t)
+  );
 }
 
 // ── HTML de la app ────────────────────────────────────────────────────────────
@@ -933,6 +947,12 @@ const server = http.createServer(async (req, res) => {
       const emailIntent = detectEmailIntent(lastMsg);
       const hasGmailUrls = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
 
+      // ── Detectar si el usuario se refiere a emails ya mostrados ──────────
+      // Si hay contexto previo y el usuario hace referencia a esos emails
+      // sin pedir una búsqueda nueva, usamos el contexto guardado
+      const referringToPrevious = isReferringToPreviousEmails(lastMsg);
+      const hasPreviousEmailContext = !!serverSession.lastEmailsContext;
+
       console.log('\n═══ CHAT REQUEST ═══');
       console.log('  lastMsg:', lastMsg.substring(0, 80));
       console.log('  sessionId:', sessionId);
@@ -941,14 +961,16 @@ const server = http.createServer(async (req, res) => {
       console.log('  pendingQuery (servidor):', pendingQuery);
       console.log('  pendingEmailId (servidor):', pendingEmailId);
       console.log('  emailIntent:', emailIntent ? emailIntent.action : null);
+      console.log('  referringToPrevious:', referringToPrevious);
+      console.log('  hasPreviousEmailContext:', hasPreviousEmailContext);
       console.log('  serverSession:', JSON.stringify(serverSession));
 
       // ── Gmail / N8N ───────────────────────────────────────────────────────
       if (hasGmailUrls && (emailIntent || (isConfirmation && pendingAction))) {
         const account = emailIntent?.account || serverSession.account || 'personal';
         let webhookUrl;
-        if (account === 'ong' && body.n8nGmailOngUrl)           webhookUrl = body.n8nGmailOngUrl;
-        else if (account === 'trabajo' && body.n8nGmailTrabajoUrl) webhookUrl = body.n8nGmailTrabajoUrl;
+        if (account === 'ong' && body.n8nGmailOngUrl)              webhookUrl = body.n8nGmailOngUrl;
+        else if (account === 'trabajo' && body.n8nGmailTrabajoUrl)  webhookUrl = body.n8nGmailTrabajoUrl;
         else webhookUrl = body.n8nGmailPersonalUrl || body.n8nGmailTrabajoUrl || body.n8nGmailOngUrl;
 
         let n8nPayload;
@@ -1004,14 +1026,42 @@ const server = http.createServer(async (req, res) => {
                 pendingQuery:   n8nResult.pendingQuery   || '',
                 pendingEmailId: n8nResult.pendingEmailId || '',
                 pendingLimit:   n8nResult.pendingLimit   || null,
+                lastEmailsContext: serverSession.lastEmailsContext || null, // preservar contexto previo
                 account
               });
               // Auto-expirar en 10 minutos
               setTimeout(() => pendingSessions.delete(sessionId), 10 * 60 * 1000);
               console.log('  ✅ Sesión pendiente guardada:', JSON.stringify(pendingSessions.get(sessionId)));
             } else if (isConfirmation) {
+              // Limpiar pendiente pero conservar contexto de emails
+              const prevContext = serverSession.lastEmailsContext || null;
               pendingSessions.delete(sessionId);
+              if (prevContext) {
+                pendingSessions.set(sessionId, { lastEmailsContext: prevContext, account });
+                setTimeout(() => pendingSessions.delete(sessionId), 30 * 60 * 1000);
+              }
               console.log('  🗑️ Sesión limpiada tras confirmación ejecutada');
+            }
+
+            // ── Guardar contexto de emails mostrados para turnos futuros ──
+            // Se guarda siempre que n8n devuelva emails (aunque no haya pending)
+            const n8nResultStr = JSON.stringify(n8nResult);
+            const hasEmailData = n8nResult.emails_detallados || n8nResult.result || n8nResult.count > 0;
+            if (hasEmailData) {
+              const currentSess = pendingSessions.get(sessionId) || {};
+              pendingSessions.set(sessionId, {
+                ...currentSess,
+                lastEmailsContext: n8nResultStr.substring(0, 3000),
+                account
+              });
+              // Auto-expirar en 30 minutos si no hay pending
+              if (!hasPending) {
+                setTimeout(() => {
+                  const s = pendingSessions.get(sessionId);
+                  if (s && !s.pendingAction) pendingSessions.delete(sessionId);
+                }, 30 * 60 * 1000);
+              }
+              console.log('  💾 Contexto de emails guardado en sesión');
             }
 
             // Formatear respuesta con Claude
@@ -1020,6 +1070,12 @@ const server = http.createServer(async (req, res) => {
               year: 'numeric', month: 'long', day: 'numeric',
               hour: '2-digit', minute: '2-digit'
             });
+
+            // Incluir contexto previo si el usuario se refiere a emails ya mostrados
+            const contextExtra = (referringToPrevious && hasPreviousEmailContext && !hasEmailData)
+              ? '\n\nCONTEXTO - Emails que ya se mostraron al usuario en este turno anterior:\n' + serverSession.lastEmailsContext.substring(0, 2000)
+              : '';
+
             const formatted = await callClaude(body.claudeKey, {
               model: body.model || 'claude-haiku-4-5-20251001',
               max_tokens: 1200,
@@ -1037,7 +1093,9 @@ Reglas:
 - Sé directo y conciso. Sin markdown excesivo.`,
               messages: [{
                 role: 'user',
-                content: 'Petición: ' + sanitize(lastMsg) + '\n\nResultado:\n' + JSON.stringify(n8nResult).substring(0, 4000)
+                content: 'Petición: ' + sanitize(lastMsg) +
+                  '\n\nResultado de n8n:\n' + n8nResultStr.substring(0, 4000) +
+                  contextExtra
               }]
             });
 
@@ -1055,6 +1113,40 @@ Reglas:
         } catch (e) {
           console.log('N8N Gmail error:', e.message);
           // Continúa a Claude directo como fallback
+        }
+      }
+
+      // ── Si el usuario se refiere a emails previos pero no hay intención de email detectada ──
+      // (ej: "responde a ese" sin keyword claro) → usar contexto guardado directamente con Claude
+      if (hasPreviousEmailContext && (referringToPrevious || (emailIntent?.action === 'responder'))) {
+        const nowStr = new Date().toLocaleString('es-ES', {
+          timeZone: 'Europe/Madrid', weekday: 'long',
+          year: 'numeric', month: 'long', day: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        });
+        try {
+          const formatted = await callClaude(body.claudeKey, {
+            model: body.model || 'claude-haiku-4-5-20251001',
+            max_tokens: 1200,
+            system: sanitize(body.systemPrompt || '') + `
+
+Fecha y hora actual: ${nowStr}.
+
+Eres un asistente de email. El usuario se está refiriendo a emails que ya se mostraron antes en la conversación.
+Usa el contexto de emails previos para entender a qué email se refiere y ayudarle.
+Si necesitas hacer una acción (responder, eliminar) sobre un email concreto, indícale al usuario que lo pida con más detalle especificando el remitente o asunto.`,
+            messages: [
+              ...body.messages.slice(-10),
+              {
+                role: 'user',
+                content: 'El usuario dice: ' + sanitize(lastMsg) +
+                  '\n\nContexto - emails mostrados anteriormente:\n' + serverSession.lastEmailsContext.substring(0, 2000)
+              }
+            ]
+          });
+          return sendJSON(res, 200, formatted);
+        } catch (e) {
+          console.log('Claude context fallback error:', e.message);
         }
       }
 
