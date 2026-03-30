@@ -1081,21 +1081,24 @@ const server = http.createServer(async (req, res) => {
             }
 
             // Guardar contexto de emails siempre que n8n devuelva datos
+            // IMPORTANTE: solo actualizar lastEmailsContext, nunca sobreescribir pendingIntentAction ni pendingContent
             const hasEmailData = n8nResult.emails_detallados || n8nResult.result || n8nResult.count > 0;
-            if (hasEmailData) {
+            if (hasEmailData && !hasPending && !wasSearchForConfirm) {
+              // Solo guardamos contexto si no acabamos de guardar una sesión pendiente
+              // (para no sobreescribir pendingIntentAction que acabamos de guardar)
               const currentSess = pendingSessions.get(sessionId) || {};
               pendingSessions.set(sessionId, {
                 ...currentSess,
                 lastEmailsContext: n8nResultStr.substring(0, 3000),
                 account
               });
-              if (!hasPending && !wasSearchForConfirm) {
-                setTimeout(() => {
-                  const s = pendingSessions.get(sessionId);
-                  if (s && !s.pendingAction && !s.pendingIntentAction) pendingSessions.delete(sessionId);
-                }, 30 * 60 * 1000);
-              }
+              setTimeout(() => {
+                const s = pendingSessions.get(sessionId);
+                if (s && !s.pendingAction && !s.pendingIntentAction) pendingSessions.delete(sessionId);
+              }, 30 * 60 * 1000);
               console.log('  💾 Contexto de emails guardado');
+            } else if (hasEmailData) {
+              console.log('  💾 Contexto ya guardado en sesión pendiente (no sobreescribir)');
             }
 
             const nowStr = new Date().toLocaleString('es-ES', {
